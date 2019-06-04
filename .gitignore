@@ -106,3 +106,6 @@ venv.bak/
 # Own things
 /Data
 awss3.txt
+*.png
+.idea/
+viriciti/
