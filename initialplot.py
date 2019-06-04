@@ -11,7 +11,7 @@ time16 = []
 time19 = []
 
 
-with open('../citea_e_20/speed.csv') as csv_file:
+with open('../Data/proov_001/speed.csv') as csv_file:
     csv_reader = csv.reader(csv_file, delimiter=',')
     line_count = 0
     init_day = 0
@@ -25,11 +25,12 @@ with open('../citea_e_20/speed.csv') as csv_file:
             print(datetime.utcfromtimestamp(int(row[0])/1000.))
         line_count += 1
         dateandtime = datetime.utcfromtimestamp(int(row[0])/1000.)
-        if dateandtime.day != init_day:
+        # print(dateandtime)
+        if dateandtime.day > 5:
             break
         if dateandtime.hour < 16:
             continue
-        elif dateandtime.hour == 16:
+        elif dateandtime.hour == 21 and dateandtime.day == 5:
             speed16.append(np.round(float(row[1]),2))
             time16.append(dateandtime.minute)
         elif dateandtime.hour == 17:
@@ -43,7 +44,7 @@ with open('../citea_e_20/speed.csv') as csv_file:
 # smoothed = savgol_filter(speed, 1001, 3)
 # plt.plot(speed)
 plt.plot(time16, speed16)
-plt.title("speed between 16:00 and 17:00")
-plt.savefig('speed16.png')
+plt.title("speed between 21:00 and 22:00")
+plt.savefig('speed21.png')
 
 plt.show()
