@@ -16,7 +16,6 @@ df['date'] = df['time'].dt.date
 df['hour'] = df['time'].dt.hour
 df['minute'] = df['time'].dt.minute
 df['second'] = df['time'].dt.second
-df = df.drop('time', axis=1)
 df['minute_in_hours'] = df['minute'] * 60 + df['second']
 df['accelerating'] = (df['speed'] - df['speed'].shift(-delta_timestep * 5)) < -delta_accel
 df['breaking'] = (df['speed'] - df['speed'].shift(-delta_timestep * 5)) > delta_accel
