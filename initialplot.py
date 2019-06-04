@@ -1,50 +1,35 @@
-import csv
+import pandas as pd
 import matplotlib.pyplot as plt
-from datetime import datetime, timezone
-import numpy as np
-from scipy.signal import savgol_filter
+
+start_date = '2017-01-02'
+end_date = '2017-01-02'
+set_hour = 7
+
+# Timestep to calculate if vehicle is accelerating/braking in seconds
+delta_accel = 4
+delta_timestep = 1
 
 
-speed16 = []
-speed19 = []
-time16 = []
-time19 = []
+df = pd.read_csv('Data/proov_001/speed.csv')
+df['time'] = pd.to_datetime(df['time'], unit='ms')
+df['date'] = df['time'].dt.date
+df['hour'] = df['time'].dt.hour
+df['minute'] = df['time'].dt.minute
+df['second'] = df['time'].dt.second
+df = df.drop('time', axis=1)
+df['minute_in_hours'] = df['minute'] * 60 + df['second']
+df['accelerating'] = (df['speed'] - df['speed'].shift(-delta_timestep * 5)) < -delta_accel
+df['breaking'] = (df['speed'] - df['speed'].shift(-delta_timestep * 5)) > delta_accel
 
+df_day_sample = df[307:75676].reset_index(drop=True)
+df_hour_sample = df_day_sample.loc[df_day_sample['hour'] == set_hour]
 
-with open('../Data/proov_001/speed.csv') as csv_file:
-    csv_reader = csv.reader(csv_file, delimiter=',')
-    line_count = 0
-    init_day = 0
-    for row in csv_reader:
-        if line_count == 0:
-            line_count += 1
-            continue
-        elif line_count == 1:
-            init_day = datetime.utcfromtimestamp(int(row[0])/1000.)
-            init_day = init_day.day
-            print(datetime.utcfromtimestamp(int(row[0])/1000.))
-        line_count += 1
-        dateandtime = datetime.utcfromtimestamp(int(row[0])/1000.)
-        # print(dateandtime)
-        if dateandtime.day > 5:
-            break
-        if dateandtime.hour < 16:
-            continue
-        elif dateandtime.hour == 21 and dateandtime.day == 5:
-            speed16.append(np.round(float(row[1]),2))
-            time16.append(dateandtime.minute)
-        elif dateandtime.hour == 17:
-            speed19.append(np.round(float(row[1]),2))
-            time19.append(dateandtime.minute)
+# import pdb; pdb.set_trace()
 
-
-
-# print(time[/], time[-1])
-
-# smoothed = savgol_filter(speed, 1001, 3)
-# plt.plot(speed)
-plt.plot(time16, speed16)
-plt.title("speed between 21:00 and 22:00")
-plt.savefig('speed21.png')
+plt.plot(df_hour_sample['minute_in_hours'], df_hour_sample['speed'])
+plt.title("speed between %d and %d" % (set_hour, set_hour+1))
+plt.xlabel("Time in seconds")
+plt.ylabel("Speed in km/h")
+plt.savefig('speed_plot.png')
 
 plt.show()
