@@ -5,21 +5,26 @@ import folium
 
 from picket import Fence
 
+file_flag = 'gps_filter'
+type_flag = 'get_points'
+
 
 def get_fence():
     geoFence = Fence()
-    points = [(52.126483, 5.053564),  # Top right
-              (52.116285, 5.138844),  # Top left
-              (52.069820, 5.145536),  # Bottom Left
-              (52.054082, 5.031153)]  # Bottom right
+    points = [(52.093338, 5.111842),  # Top left
+              (52.093549, 5.116343),  # Top right
+              (52.092675, 5.116692),  # Bottom Left
+              (52.092632, 5.112223)]  # Bottom right
 
     for point in points:
         geoFence.add_point(point)
     return geoFence
 
 
-def get_files(geo_fence, type_flag, file_flag):
+def get_files(geo_fence, file_flag, type_flag):
     files = glob('/data/ai-projects/*')
+
+    files_to_consider = ['proov_001', 'proov_002', 'proov_003']
 
     correct_list = []
     mean_coordinates = []
@@ -30,60 +35,80 @@ def get_files(geo_fence, type_flag, file_flag):
     file_size = len(files)
     files_iterated = 0
 
+    geo_fence_list = []
+
     for file in files:
 
         files_iterated += 1
 
-        exists = os.path.isfile(file + '/gps_filter.csv')
+        exists = os.path.isfile(file + '/' + file_flag + '.csv')
         if exists:
             filename = file.split('/')[-1]
 
-            print('Parsing file \'', filename, '\'', files_iterated, '/', file_size)
-            total_files.append(filename)
-            try:
-                if file_flag == 'gps':
-                    df = pd.read_csv(file + '/gps_filter.csv', usecols=['gps_filter'])
-                    df[['lat', 'lon']] = df['gps_filter'].str.split('|', expand=True).astype(float)
-                    df = df[['lat', 'lon']]
-                elif file_flag == 'location':
-                    df = pd.read_csv(file + '/locations.csv', usecols=['lat', 'lon'])
+            if filename in files_to_consider:
 
-            except pd.io.common.EmptyDataError:
-                print('There was a problem with file', filename)
-                unhealthy_files.append(filename)
-                continue
+                print('Parsing file \'', filename, '\'', files_iterated, '/', file_size)
+                total_files.append(filename)
+                try:
+                    if file_flag == 'gps_filter':
+                        df = pd.read_csv(file + '/gps_filter.csv')
+                        df[['lat', 'lon']] = df['gps_filter'].str.split('|', expand=True).astype(float)
+                        df['time'] = pd.to_datetime(df['time'], unit='ms')
+                        df.drop('gps_filter', axis=1, inplace=True)
+                    elif file_flag == 'locations':
+                        df = pd.read_csv(file + '/locations.csv', usecols=['lat', 'lon'])
 
-            no_coordinates += df.shape[0]
-            if type_flag == 'check_files':
-                avg_lat, avg_lon = df.mean()
-                mean_coordinates.append([filename, (avg_lat, avg_lon)])
-                if geo_fence.check_point((avg_lat, avg_lon)):
-                    correct_list.append(file)
+                except pd.io.common.EmptyDataError:
+                    print('There was a problem with file', filename)
+                    unhealthy_files.append(filename)
+                    continue
 
-            elif type_flag == 'get_points':
-                raise NotImplementedError
+                no_coordinates += df.shape[0]
+                if type_flag == 'check_files':
+                    avg_lat, avg_lon = df.mean()
+                    mean_coordinates.append([filename, (avg_lat, avg_lon)])
+                    if geo_fence.check_point((avg_lat, avg_lon)):
+                        correct_list.append(file)
 
-                # for _, row in df.iterrows():
-                #     point = (row['lat'], row['lon'])
-                #     # if geo_fence.check_point(point):
+                elif type_flag == 'get_points':
 
-    print('Parsed', len(total_files), 'files of which', len(unhealthy_files), 'are broken')
+                    pass_counter = 0
+                    pass_trough_bool = False
+                    pass_trough_time_in = []
+                    pass_trough_list = []
+
+                    for _, row in df.iterrows():
+                        point = (row['lat'], row['lon'])
+                        if geo_fence.check_point(point):
+                            pass_counter += 1
+                            if not pass_trough_bool:
+                                pass_trough_time_in = [point, row['time']]
+                            pass_trough_bool = True
+                            geo_fence_list.append(point)
+                        else:
+                            if pass_trough_bool:
+                                pass_trough_bool = False
+                                pass_trough_list.append([pass_trough_time_in, [point, row['time']]])
+
+                    df_troughput = pd.DataFrame(pass_trough_list)
+                    df_troughput.to_csv(filename + '_geoFenced.csv', header=False, index=False)
+
+    print('Parsed', len(files), 'files of which', len(files) - len(total_files), 'are not availlable to parse')
     print('Within the healthy files', no_coordinates, 'coordinates are parsed')
     print('')
 
     return correct_list, mean_coordinates, no_coordinates
 
 
-def plot_map(coordinates):
+def plot_map(coordinates, file_flag):
     mapit = folium.Map(location=[52.0, 5.0], zoom_start=6)
     for line, coord in coordinates:
         folium.Marker(location=[coord[0], coord[1]], fill_color='#43d9de', radius=8).add_child(folium.Popup(line)).add_to(mapit)
 
-    mapit.save('map.html')
+    mapit.save('map_' + file_flag + '.html')
 
 
 if __name__ == '__main__':
     fence = get_fence()
-    import pdb; pdb.set_trace()
-    files, coords, no_coordinates = get_files(fence, type_flag='check_files', file_flag='gps')
-    plot_map(coords)
+    files, coords, no_coordinates = get_files(fence, file_flag, type_flag)
+    plot_map(coords, file_flag)
