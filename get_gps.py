@@ -5,17 +5,12 @@ import folium
 
 from picket import Fence
 
-file_flag = 'gps_filter'
+file_flag = 'locations'
 type_flag = 'get_points'
 
 
-def get_fence():
+def get_fence(points):
     geoFence = Fence()
-    points = [(52.093338, 5.111842),  # Top left
-              (52.093549, 5.116343),  # Top right
-              (52.092675, 5.116692),  # Bottom Left
-              (52.092632, 5.112223)]  # Bottom right
-
     for point in points:
         geoFence.add_point(point)
     return geoFence
@@ -100,8 +95,9 @@ def get_files(geo_fence, file_flag, type_flag):
     return correct_list, mean_coordinates, no_coordinates
 
 
-def plot_map(coordinates, file_flag):
+def plot_map(coordinates, file_flag, points):
     mapit = folium.Map(location=[52.0, 5.0], zoom_start=6)
+    folium.vector_layers.Polygon(points).add_to(mapit)
     for line, coord in coordinates:
         folium.Marker(location=[coord[0], coord[1]], fill_color='#43d9de', radius=8).add_child(folium.Popup(line)).add_to(mapit)
 
@@ -109,6 +105,10 @@ def plot_map(coordinates, file_flag):
 
 
 if __name__ == '__main__':
-    fence = get_fence()
+    points = [(52.093338, 5.111842),  # Top left
+              (52.093549, 5.116343),  # Top right
+              (52.092675, 5.116692),  # Bottom Left
+              (52.092632, 5.112223)]  # Bottom right
+    fence = get_fence(points)
     files, coords, no_coordinates = get_files(fence, file_flag, type_flag)
-    plot_map(coords, file_flag)
+    plot_map(coords, file_flag, points)
