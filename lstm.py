@@ -1,9 +1,11 @@
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
+import argparse
 
 import torch.nn as nn
 import torch
+import pandas as pd 
 
 class LSTM(nn.Module):
 
@@ -42,9 +44,14 @@ def train(args):
     else:
         device = torch.device(args.device)
 
+    # TODO: data preproccessing
+
+    get_data(f'Data/{args.bus}/combined.csv')
+    return
+
     # Initialise model
     model = LSTM(batch_size=args.batch_size,
-                input_size=args.input_size,
+                input_size=input_size,
                 lstm_num_hidden=args.lstm_num_hidden,
                 lstm_num_layers=args.lstm_num_layers,
                 device=device
@@ -54,11 +61,6 @@ def train(args):
     # Set up the loss and optimizer
     criterion = torch.nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.RMSprop(model.parameters(), lr=args.learning_rate)
-
-    # TODO: data preproccessing
-
-
-
 
     # Iterate over data
     for step, datapoint in enumerate(data):
@@ -73,6 +75,10 @@ def train(args):
         loss = criterion(out.transpose(2,1), y)
         loss.backward()
         optimizer.step()
+
+def get_data(filename):
+    df = pd.read_csv(filename)
+    print(df.columns)
 
 if __name__ == "__main__":
 
@@ -97,10 +103,8 @@ if __name__ == "__main__":
     parser.add_argument('--train_steps', type=int, default=int(1e6), help='Number of training steps')
     parser.add_argument('--max_norm', type=float, default=5.0, help='--')
 
-    # Misc params
-    parser.add_argument('--summary_path', type=str, default="./summaries/", help='Output path for summaries')
-    parser.add_argument('--print_every', type=int, default=5, help='How often to print training progress')
-    parser.add_argument('--sample_every', type=int, default=100, help='How often to sample from the model')
+    # Bus specific
+    parser.add_argument('--bus', type=str, default='proov_001', help='Bus to train data on.')
 
     args = parser.parse_args()
 

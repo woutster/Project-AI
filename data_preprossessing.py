@@ -5,6 +5,25 @@ from datetime import datetime
 import numpy as np
 import requests
 
+
+import ast
+import geopy.distance
+import matplotlib.pyplot as plt
+
+def calculate_distance(point1, point2):
+    point1 = ast.literal_eval(point1)
+    point2 = ast.literal_eval(point2)
+    return geopy.distance.vincenty(point1, point2).m
+
+
+def calculate_cmf(speed, distance):
+    speed_squared = np.square(speed)
+    diff = np.diff(speed_squared)
+    cmf_pos = np.sum(np.maximum(diff, 0))/distance
+    cmf_neg = np.sum(np.maximum(-diff, 0))/distance
+    return cmf_pos, cmf_neg
+
+
 def csv_to_pd(filename):
     """ Read in csv file with geofenced data and return dataframe. """
     df = pd.read_csv(filename, names=['in', 'out'])
@@ -92,14 +111,30 @@ def pd_to_csv(filename, geo, weather, one_hot_days):
                     break
 
             # Create one hot vector of days
-            one_hot_day_vec = [one_hot_days[0].iloc[i], one_hot_days[1].iloc[i], one_hot_days[2].iloc[i], one_hot_days[3].iloc[i], one_hot_days[4].iloc[i], one_hot_days[5].iloc[i], one_hot_days[6].iloc[i]]
+            # one_hot_day_vec = [one_hot_days[0].iloc[i], one_hot_days[1].iloc[i], one_hot_days[2].iloc[i], one_hot_days[3].iloc[i], one_hot_days[4].iloc[i], one_hot_days[5].iloc[i], one_hot_days[6].iloc[i]]
 
-            writer.writerow({'in_lat': g['in_lat'], 'in_long': g['in_long'], 'in_time': g['in_time'], 'out_lat':
-            g['out_lat'], 'out_long': g['out_long'], 'out_time': g['out_time'],
-            'date': g['date'], 'day': g['day'], 'monday': one_hot_days[0].iloc[i], 'tuesday': one_hot_days[1].iloc[i], 'wednesday': one_hot_days[2].iloc[i],
-            'thursday': one_hot_days[3].iloc[i], 'friday': one_hot_days[4].iloc[i], 'saturday': one_hot_days[5].iloc[i], 'sunday': one_hot_days[6].iloc[i],
-            'holiday': g['holiday'], 'time': time, 'temp': temp, 'precipitation_intensity': perc,
-            'wind_speed': wind, 'visibility': vis})
+            writer.writerow({'in_lat': g['in_lat'],
+                                'in_long': g['in_long'],
+                                'in_time': g['in_time'],
+                                'out_lat': g['out_lat'],
+                                'out_long': g['out_long'],
+                                'out_time': g['out_time'],
+                                'date': g['date'],
+                                'day': g['day'],
+                                'monday': one_hot_days[0].iloc[i],
+                                'tuesday': one_hot_days[1].iloc[i],
+                                'wednesday': one_hot_days[2].iloc[i],
+                                'thursday': one_hot_days[3].iloc[i],
+                                'friday': one_hot_days[4].iloc[i],
+                                'saturday': one_hot_days[5].iloc[i],
+                                'sunday': one_hot_days[6].iloc[i],
+                                'holiday': g['holiday'],
+                                'time': time,
+                                'temp': temp,
+                                'precipitation_intensity': perc,
+                                'wind_speed': wind,
+                                'visibility': vis
+                            })
 
 
 def holidays(geo):
@@ -149,10 +184,67 @@ def holidays(geo):
     return geo
 
 
+def add_speed(filename, geo):
+    speed = {'time': [], 'speed': []}
+    with open(filename) as csv_file:
+        csv_reader = csv.reader(csv_file, delimiter=',')
+        try:
+            for i, row in enumerate(csv_reader):
+                if i == 0:
+                    continue
+                speed['time'].append(float(row[0]))
+                speed['speed'].append(float(row[1]))
+
+        except:
+            pass
+
+    df = pd.DataFrame.from_dict(speed)
+
+    # Fix time format
+    df['time'] = pd.to_datetime(df['time'], unit='ms')
+    df['time'] = df['time'].dt.round("S")
+    df['avg_speed'] = df['speed'].copy()
+
+    cmf_poss, cmf_negs, avg_speed, speeds_in_fence, all_speeds, distances = [], [], [], [], [], []
+
+    for i, g in geo.iterrows():
+        if i < 10:
+            continue
+        for j, s in df.iterrows():
+            # all_speeds.append(s['speed'])
+            print('In:', g['in_time'], s['time'], 'out:', g['out_time'])
+            # if g['out_time'] < s['time']:
+            #     break
+            if g['in_time'] >= s['time']:
+                # print('In:', g['in_time'], s['time'])
+                speeds_in_fence.append(s['speed'])
+                if g['out_time'] <= s['time']:
+                    print('out')
+                    # print('Out:', g['out_time'], s['time'])
+                    distance = calculate_distance(f"({g['in_lat']}, {g['in_long']})", f"({g['out_lat']}, {g['out_long']})")
+                    cmf_pos, cmf_neg = calculate_cmf(speeds_in_fence, distance)
+                    # all_speeds.append([np.average(speeds_in_fence), cmf_pos, cmf_neg])
+
+                    distances.append(distance)
+                    cmf_poss.append(cmf_pos)
+                    cmf_negs.append(cmf_neg)
+                    avg_speed.append(np.average(speeds_in_fence))
+
+                    speeds_in_fence = []
+
+        print(len(cmf_poss))
+
+    geo['distance'] = distances
+    geo['cmf_pos'] = cmf_poss
+    geo['cmf_neg'] = cmf_neg
+
+    return geo
+
 bus = 'proov_002'
 geo, one_hot_days = csv_to_pd(f'Data/{bus}/{bus}_geoFenced.csv')
 weather = weather_csv_to_pd(f'Data/{bus}/weather.csv')
 
+geo = add_speed("Data/proov_001/speed.csv", geo)
 # match_weather_with_geo(geo, weather)
-geo = holidays(geo)
-pd_to_csv(f'Data/{bus}/combined.csv', geo, weather, one_hot_days)
+# geo = holidays(geo)
+# pd_to_csv(f'Data/{bus}/combined.csv', geo, weather, one_hot_days)
