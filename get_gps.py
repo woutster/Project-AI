@@ -5,7 +5,7 @@ import folium
 
 from picket import Fence
 
-file_flag = 'locations'
+file_flag = 'gps_filter'
 type_flag = 'get_points'
 
 
@@ -42,13 +42,16 @@ def get_files(geo_fence, file_flag, type_flag):
 
             if filename in files_to_consider:
 
+                # import pdb; pdb.set_trace()
+
                 print('Parsing file \'', filename, '\'', files_iterated, '/', file_size)
                 total_files.append(filename)
                 try:
                     if file_flag == 'gps_filter':
                         df = pd.read_csv(file + '/gps_filter.csv')
                         df[['lat', 'lon']] = df['gps_filter'].str.split('|', expand=True).astype(float)
-                        df['time'] = pd.to_datetime(df['time'], unit='ms')
+                        # import pdb; pdb.set_trace()
+                        df['time'] = pd.to_datetime(df['time'], unit='s')
                         df.drop('gps_filter', axis=1, inplace=True)
                     elif file_flag == 'locations':
                         df = pd.read_csv(file + '/locations.csv', usecols=['lat', 'lon'])
@@ -84,6 +87,8 @@ def get_files(geo_fence, file_flag, type_flag):
                             if pass_trough_bool:
                                 pass_trough_bool = False
                                 pass_trough_list.append([pass_trough_time_in, [point, row['time']]])
+
+                    import pdb; pdb.set_trace()
 
                     df_troughput = pd.DataFrame(pass_trough_list)
                     df_troughput.to_csv(filename + '_geoFenced.csv', header=False, index=False)

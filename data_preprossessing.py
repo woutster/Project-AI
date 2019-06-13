@@ -1,14 +1,11 @@
 import csv
 import pandas as pd
-import datetime
-from datetime import datetime
 import numpy as np
 import requests
 
-
 import ast
 import geopy.distance
-import matplotlib.pyplot as plt
+
 
 def calculate_distance(point1, point2):
     point1 = ast.literal_eval(point1)
@@ -58,6 +55,7 @@ def csv_to_pd(filename):
     one_hot_days = pd.get_dummies(df['day'])
     return df, one_hot_days
 
+
 def weather_csv_to_pd(filename):
     """ Read in csv with weather data and return a dataframe. """
 
@@ -71,6 +69,7 @@ def weather_csv_to_pd(filename):
     # df['minute_in_hours'] = df['minute'] * 60 + df['second']
     return df
 
+
 def match_weather_with_geo(geo, weather):
     # This is not working at all. :(
     df = pd.merge(geo, weather, left_on='date', right_on='date')
@@ -82,6 +81,7 @@ def match_weather_with_geo(geo, weather):
 
     # print('doing stuff...')
     # print(geo['temp'])
+
 
 def pd_to_csv(filename, geo, weather, one_hot_days):
 
@@ -178,7 +178,6 @@ def holidays(geo):
         else:
             holiday_boolean_list.append(0)
 
-
     geo['holiday'] = holiday_boolean_list
 
     return geo
@@ -240,11 +239,14 @@ def add_speed(filename, geo):
 
     return geo
 
-bus = 'proov_002'
-geo, one_hot_days = csv_to_pd(f'Data/{bus}/{bus}_geoFenced.csv')
-weather = weather_csv_to_pd(f'Data/{bus}/weather.csv')
 
-geo = add_speed("Data/proov_001/speed.csv", geo)
-# match_weather_with_geo(geo, weather)
-# geo = holidays(geo)
-# pd_to_csv(f'Data/{bus}/combined.csv', geo, weather, one_hot_days)
+if __name__ == '__main__':
+    import pdb; pdb.set_trace()
+    bus = 'proov_002'
+    geo, one_hot_days = csv_to_pd(f'Data/{bus}/{bus}_geoFenced.csv')
+    weather = weather_csv_to_pd(f'Data/{bus}/weather.csv')
+
+    geo = add_speed("Data/proov_001/speed.csv", geo)
+    match_weather_with_geo(geo, weather)
+    geo = holidays(geo)
+    # pd_to_csv(f'Data/{bus}/combined.csv', geo, weather, one_hot_days)
