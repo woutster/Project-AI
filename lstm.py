@@ -11,33 +11,31 @@ import numpy as np
 
 class LSTM(nn.Module):
 
-    def __init__(self, batch_size, input_size,  output_size,
+    def __init__(self, batch_size, input_size, output_size,
                  lstm_num_hidden=256, lstm_num_layers=2, device='cuda'):
-
         super(LSTM, self).__init__()
 
         # Initialization of LSTM
         self.lstm = nn.LSTM(
-                    input_size=input_size,
-                    hidden_size=lstm_num_hidden,
-                    num_layers=lstm_num_layers,
-                    bidirectional=False,
-                    batch_first=False
+            input_size=input_size,
+            hidden_size=lstm_num_hidden,
+            num_layers=lstm_num_layers,
+            bidirectional=False,
+            batch_first=False
         )
 
         self.linear = nn.Linear(lstm_num_hidden, output_size, bias=True)
 
-    def forward(self, x, hc = None):
+    def forward(self, x, hc=None):
         """Forward pass of LSTM"""
         out, (h, c) = self.lstm(x, hc)
 
         out = self.linear(out)
 
-        return out, (h,c)
+        return out, (h, c)
 
 
 def train(args):
-
     # Initialize the device which to run the model on
     if args.device == 'cuda':
         if torch.cuda.is_available():
@@ -55,21 +53,21 @@ def train(args):
 
     # Initialise model
     pos_model = LSTM(batch_size=args.batch_size,
-                input_size=input_size,
-                lstm_num_hidden=args.lstm_num_hidden,
-                lstm_num_layers=args.lstm_num_layers,
-                device=device,
-                output_size=1
-    )
+                     input_size=input_size,
+                     lstm_num_hidden=args.lstm_num_hidden,
+                     lstm_num_layers=args.lstm_num_layers,
+                     device=device,
+                     output_size=1
+                     )
     pos_model.to(device)
 
     neg_model = LSTM(batch_size=args.batch_size,
-                input_size=input_size,
-                lstm_num_hidden=args.lstm_num_hidden,
-                lstm_num_layers=args.lstm_num_layers,
-                device=device,
-                output_size=1
-    )
+                     input_size=input_size,
+                     lstm_num_hidden=args.lstm_num_hidden,
+                     lstm_num_layers=args.lstm_num_layers,
+                     device=device,
+                     output_size=1
+                     )
     neg_model.to(device)
 
     # Set up the loss and optimizer
@@ -77,47 +75,49 @@ def train(args):
     pos_optimizer = torch.optim.RMSprop(pos_model.parameters(), lr=args.learning_rate)
 
     neg_criterion = torch.nn.MSELoss().to(device)
-    neg_optimizer = torch.optim.RMSprop(pos_model.parameters(), lr=args.learning_rate)
+    neg_optimizer = torch.optim.RMSprop(neg_model.parameters(), lr=args.learning_rate)
 
     # Iterate over data
     for step, batch_inputs in enumerate(X):
 
-
-        # TODO: reshape data?
         x = batch_inputs.view(1, args.batch_size, input_size)
 
         pos_optimizer.zero_grad()
         neg_optimizer.zero_grad()
 
-        p_out, (ph,pc) = pos_model(x)
-        n_out, (nh, nc) = neg_model(x)
-        # p_acc = accuracy(p_out, Y_pos[step], args.batch_size)
-        # n_acc = accuracy(n_out, Y_neg[step], args.batch_size)
+        p_out, (ph, pc) = pos_model(x)
+        # n_out, (nh, nc) = neg_model(x)
 
-        p_loss = pos_criterion(p_out.transpose(0,1), Y_pos[step].view(args.batch_size,1))
+        p_loss = pos_criterion(p_out.transpose(0, 1), Y_pos[step].view(args.batch_size, 1))
 
         p_loss.backward()
         pos_optimizer.step()
 
-        n_loss = neg_criterion(n_out.transpose(0,1), Y_neg[step].view(args.batch_size, 1))
+        # n_loss = neg_criterion(n_out.transpose(0, 1), Y_neg[step].view(args.batch_size, 1))
 
-        n_loss.backward()
-        neg_optimizer.step()
+        # n_loss.backward()
+        # neg_optimizer.step()
 
         if step % args.eval_every == 0:
-            # import pdb; pdb.set_trace()
+            
+            p_acc = accuracy(p_out, Y_pos[step], args.batch_size, args.acc_bound)
+            # n_acc = accuracy(n_out, Y_neg[step], args.batch_size, args.acc_bound)
+
             print("Training step: ", step)
             print("Pos loss: ", p_loss.item())
-            print("Neg loss: ", n_loss.item())
+            # print("Neg loss: ", n_loss.item())
+            print("Pos acc: ", p_acc)
+            # print("Neg acc:", n_acc)
 
 
-def accuracy(predictions, target, batch_size):
-    prediction = predictions.argmax(dim=2)
-    target = targets
+def accuracy(predictions, target, batch_size, tolerance):
+    prediction = predictions.argmax(dim=2).float().numpy()[0]
 
-    accuracy = (target == prediction).float().sum() / batch_size
+    correct_array = np.isclose(target.numpy(), prediction, rtol=tolerance)
 
-    return accuracy.item()
+    accuracy = np.sum(correct_array)/batch_size
+
+    return accuracy
 
 
 def process_data(df):
@@ -167,11 +167,11 @@ def make_batches(df, batch_size):
         yneg.append(yneg_batch)
         x_batch, ypos_batch, yneg_batch = [], [], []
 
-    return torch.tensor(x).type(torch.FloatTensor), torch.tensor(ypos).type(torch.FloatTensor), torch.tensor(yneg).type(torch.FloatTensor)
+    return torch.tensor(x).type(torch.FloatTensor), torch.tensor(ypos).type(torch.FloatTensor), torch.tensor(yneg).type(
+        torch.FloatTensor)
 
 
 if __name__ == "__main__":
-
     # Parse training configuration
     parser = argparse.ArgumentParser()
 
@@ -182,7 +182,7 @@ if __name__ == "__main__":
 
     # Training params
     parser.add_argument('--batch_size', type=int, default=64, help='Number of examples to process in a batch')
-    parser.add_argument('--learning_rate', type=float, default=1e-5, help='Learning rate')
+    parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate')
     parser.add_argument('--device', type=str, default='cpu', help='Device to run on')
 
     # It is not necessary to implement the following three params, but it may help training.
@@ -193,6 +193,7 @@ if __name__ == "__main__":
     parser.add_argument('--train_steps', type=int, default=int(1e6), help='Number of training steps')
     parser.add_argument('--max_norm', type=float, default=5.0, help='--')
     parser.add_argument('--eval_every', type=float, default=100, help='--')
+    parser.add_argument('--acc_bound', type=float, default=1.0, help='--')
 
     # Bus specific
     parser.add_argument('--bus', type=str, default='proov_001', help='Bus to train data on.')
