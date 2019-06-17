@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 class LSTM(nn.Module):
@@ -45,13 +46,11 @@ def train(args):
     else:
         device = torch.device(args.device)
 
-    # TODO: data preproccessing
-
     train, test = get_data(args.batch_size)
 
     X, Y_pos, Y_neg = train[0], train[1], train[2]
     X_test, Y_test_pos, Y_test_neg = test[0], test[1], test[2]
-    print(X_test.shape)
+
     input_size = X.shape[2]
 
     # Initialise model
@@ -80,6 +79,17 @@ def train(args):
     neg_criterion = torch.nn.MSELoss().to(device)
     neg_optimizer = torch.optim.RMSprop(neg_model.parameters(), lr=args.learning_rate)
 
+
+    # Plotting prep
+    pos_targets = []
+    pos_outs = []
+    pos_losses = []
+    pos_accuracies = []
+    neg_targets = []
+    neg_outs = []
+    neg_losses = []
+    neg_accuracies = []
+
     # Iterate over data
     for step, batch_inputs in enumerate(X):
 
@@ -89,28 +99,43 @@ def train(args):
         neg_optimizer.zero_grad()
 
         p_out, (ph, pc) = pos_model(x)
-        # n_out, (nh, nc) = neg_model(x)
+        n_out, (nh, nc) = neg_model(x)
 
         p_loss = pos_criterion(p_out.transpose(0, 1), Y_pos[step].view(args.batch_size, 1))
 
         p_loss.backward()
         pos_optimizer.step()
 
-        # n_loss = neg_criterion(n_out.transpose(0, 1), Y_neg[step].view(args.batch_size, 1))
+        n_loss = neg_criterion(n_out.transpose(0, 1), Y_neg[step].view(args.batch_size, 1))
 
-        # n_loss.backward()
-        # neg_optimizer.step()
+        n_loss.backward()
+        neg_optimizer.step()
+
+        p_acc = accuracy(p_out, Y_pos[step], args.batch_size, args.acc_bound)
+        n_acc = accuracy(n_out, Y_neg[step], args.batch_size, args.acc_bound)
+
+        # Plotting statistics
+        pos_targets.extend(Y_pos[step].tolist())
+        pos_outs.extend(p_out.view(args.batch_size).tolist())
+        pos_losses.append(p_loss.item())
+        pos_accuracies.append(p_acc)
+        neg_targets.extend(Y_neg[step].tolist())
+        neg_outs.extend(n_out.view(args.batch_size).tolist())
+        neg_losses.append(n_loss.item())
+        neg_accuracies.append(n_acc)
+
 
         if step % args.eval_every == 0:
             p_acc = accuracy(p_out, Y_pos[step], args.batch_size, args.acc_bound)
-            # n_acc = accuracy(n_out, Y_neg[step], args.batch_size, args.acc_bound)
+            n_acc = accuracy(n_out, Y_neg[step], args.batch_size, args.acc_bound)
 
             print("Training step: ", step)
             print("Pos loss: ", p_loss.item())
-            # print("Neg loss: ", n_loss.item())
+            print("Neg loss: ", n_loss.item())
             print("Pos acc: ", p_acc, "%")
-            # print("Neg acc:", n_acc)
+            print("Neg acc:", n_acc)
             print('')
+            break
 
     print("Done training...\n")
     x = X_test.view(1, X_test.shape[0], input_size)
@@ -119,16 +144,23 @@ def train(args):
     neg_optimizer.zero_grad()
 
     p_out, (ph, pc) = pos_model(x)
-    # n_out, (nh, nc) = neg_model(x)
+    n_out, (nh, nc) = neg_model(x)
 
-    p_test_loss = pos_criterion(p_out.transpose(0, 1), Y_pos[step].view(args.batch_size, 1))
-    p_test_acc = accuracy(p_out, Y_pos[step], args.batch_size, args.acc_bound)
+    p_test_loss = pos_criterion(p_out.transpose(0, 1), Y_test_pos.view(Y_test_pos.shape[0], 1))
+    p_test_acc = accuracy(p_out, Y_test_pos, args.batch_size, args.acc_bound)
+    n_test_loss = pos_criterion(p_out.transpose(0, 1), Y_test_neg.view(Y_test_neg.shape[0], 1))
+    n_test_acc = accuracy(n_out, Y_test_neg, args.batch_size, args.acc_bound)
+
 
     print("Pos loss:", p_test_loss.item())
-    # print("Neg loss: ", n_loss.item())
+    print("Neg loss: ", n_loss.item())
     print("Pos acc:", p_test_acc, "%")
-    # print("Neg acc:", n_acc)
+    print("Neg acc:", n_acc)
     print('')
+
+    plt.plot(pos_targets[0])
+    plt.plot(pos_outs[0])
+    plt.show()
 
 
 def accuracy(predictions, target, batch_size, tolerance):
