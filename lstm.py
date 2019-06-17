@@ -72,10 +72,10 @@ def train(args):
 
     # Set up the loss and optimizer
     pos_criterion = torch.nn.MSELoss().to(device)
-    pos_optimizer = torch.optim.RMSprop(pos_model.parameters(), lr=args.learning_rate)
+    pos_optimizer = torch.optim.Adam(pos_model.parameters(), lr=args.learning_rate)
 
     neg_criterion = torch.nn.MSELoss().to(device)
-    neg_optimizer = torch.optim.RMSprop(neg_model.parameters(), lr=args.learning_rate)
+    neg_optimizer = torch.optim.Adam(neg_model.parameters(), lr=args.learning_rate)
 
     # Iterate over data
     for step, batch_inputs in enumerate(X):
@@ -120,7 +120,7 @@ def accuracy(predictions, target, batch_size, tolerance):
 
 def process_data(df):
     df.dropna(inplace=True)
-    df = df.drop(['gps_point_entry', 'gps_point_exit'], axis=1).astype(np.float)
+    df = df.drop(['gps_point_entry', 'gps_point_exit', 'avg_speed'], axis=1).astype(np.float)
     return df
 
 
@@ -137,7 +137,6 @@ def get_data(filename, batch_size):
     df['timestamp_exit'] = pd.to_datetime(df['timestamp_exit'], format='%Y-%m-%d %H:%M:%S')
     df['timestamp_exit'] = df.timestamp_exit.values.astype(np.float64) // 10 ** 9
     df = process_data(df)
-    # return df
     return make_batches(df, batch_size)
 
 
