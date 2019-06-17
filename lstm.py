@@ -99,27 +99,23 @@ def train(args):
         # neg_optimizer.step()
 
         if step % args.eval_every == 0:
-            print(p_out)
-            print(Y_pos[step].mean())
             p_acc = accuracy(p_out, Y_pos[step], args.batch_size, args.acc_bound)
             # n_acc = accuracy(n_out, Y_neg[step], args.batch_size, args.acc_bound)
 
             print("Training step: ", step)
             print("Pos loss: ", p_loss.item())
             # print("Neg loss: ", n_loss.item())
-            print("Pos acc: ", p_acc)
+            print("Pos acc: ", p_acc, "%")
             # print("Neg acc:", n_acc)
             print('')
 
 
 def accuracy(predictions, target, batch_size, tolerance):
     prediction = predictions.detach().numpy()[0].T
+    target = target.numpy()
 
-    correct_array = np.isclose(target.numpy(), prediction, rtol=tolerance)
-
-    accuracy = (np.count_nonzero(correct_array)/batch_size) * 100
-
-    return accuracy
+    diff_array = np.abs(prediction - target)
+    return ((diff_array <= tolerance).sum()/batch_size) * 100
 
 
 def process_data(df):
@@ -195,7 +191,7 @@ if __name__ == "__main__":
     parser.add_argument('--train_steps', type=int, default=int(1e6), help='Number of training steps')
     parser.add_argument('--max_norm', type=float, default=5.0, help='--')
     parser.add_argument('--eval_every', type=float, default=100, help='--')
-    parser.add_argument('--acc_bound', type=float, default=1.0, help='--')
+    parser.add_argument('--acc_bound', type=float, default=0.5, help='--')
 
     # Bus specific
     parser.add_argument('--bus', type=str, default='proov_001', help='Bus to train data on.')
