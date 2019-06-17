@@ -113,7 +113,7 @@ def train(args):
             print('')
 
     print("Done training...\n")
-    x = batch_inputs.view(1, args.batch_size, input_size)
+    x = X_test.view(1, X_test.shape[0], input_size)
 
     pos_optimizer.zero_grad()
     neg_optimizer.zero_grad()
@@ -212,9 +212,6 @@ def make_batches(df, batch_size, batch=True):
         x = df.values
         ypos = cmf['pos'].values
         yneg = cmf['neg'].values
-        print(x)
-        # return torch.from_numpy(x).type(torch.FloatTensor), torch.from_numpy(ypos).type(torch.FloatTensor), torch.from_numpy(yneg).type(
-        #     torch.FloatTensor)
 
     return torch.tensor(x).type(torch.FloatTensor), torch.tensor(ypos).type(torch.FloatTensor), torch.tensor(yneg).type(
         torch.FloatTensor)
