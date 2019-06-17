@@ -106,7 +106,7 @@ def merge_data(df_speed, df_combined, idx, file_name):
     df_merged['hour_of_day'] = df_merged['timestamp_exit'].dt.round('H').dt.hour
 
     df_merged.drop(['in_lat', 'in_long', 'out_lat', 'out_long', 'out_time', 'date', 'day', 'time'], axis=1, inplace=True)
-    df_fenced.to_csv('Data/proov_00' + file_name + '/proov_00' + file_name + '_merged_data.csv', sep=';')
+    df_merged.to_csv('Data/proov_00' + file_name + '/proov_00' + file_name + '_merged_data.csv', sep=';')
     return df_merged
 
 
