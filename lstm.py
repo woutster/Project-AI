@@ -11,7 +11,7 @@ import numpy as np
 
 class LSTM(nn.Module):
 
-    def __init__(self, batch_size, input_size,
+    def __init__(self, batch_size, input_size,  output_size,
                  lstm_num_hidden=256, lstm_num_layers=2, device='cuda'):
 
         super(LSTM, self).__init__()
@@ -25,7 +25,7 @@ class LSTM(nn.Module):
                     batch_first=False
         )
 
-        self.linear = nn.Linear(lstm_num_hidden, input_size, bias=True)
+        self.linear = nn.Linear(lstm_num_hidden, output_size, bias=True)
 
     def forward(self, x, hc = None):
         """Forward pass of LSTM"""
@@ -58,7 +58,8 @@ def train(args):
                 input_size=input_size,
                 lstm_num_hidden=args.lstm_num_hidden,
                 lstm_num_layers=args.lstm_num_layers,
-                device=device
+                device=device,
+                output_size=1
     )
     pos_model.to(device)
 
@@ -66,7 +67,8 @@ def train(args):
                 input_size=input_size,
                 lstm_num_hidden=args.lstm_num_hidden,
                 lstm_num_layers=args.lstm_num_layers,
-                device=device
+                device=device,
+                output_size=1
     )
     neg_model.to(device)
 
@@ -91,15 +93,13 @@ def train(args):
         # p_acc = accuracy(p_out, Y_pos[step], args.batch_size)
         # n_acc = accuracy(n_out, Y_neg[step], args.batch_size)
 
-        print(p_out)
-        print(Y_pos[step].shape, 'yshape')
-
-
-        p_loss = pos_criterion(p_out.transpose(0,1), Y_pos[step])
+        print(Y_pos.shape, 'yshape')
+        # import pdb; pdb.set_trace()
+        p_loss = pos_criterion(p_out.transpose(0,1), Y_pos[step].view(args.batch_size,1))
         p_loss.backward()
         pos_optimizer.step()
 
-        n_loss = neg_criterion(n_out.transpose(2,1), Y_neg[step])
+        n_loss = neg_criterion(n_out.transpose(0,1), Y_neg[step].view(args.batch_size, 1))
         n_loss.backward()
         neg_optimizer.step()
 
@@ -150,15 +150,15 @@ def make_batches(df, batch_size):
         if i + batch_size >= lenin:
             break
         for j in range(batch_size):
-            x_batch.append(df.iloc[i].values)
-            ypos_batch.append(cmf['pos'].iloc[i])
-            yneg_batch.append(cmf['neg'].iloc[i])
+            x_batch.append(df.iloc[i + j].values)
+            ypos_batch.append(cmf['pos'].iloc[i + j])
+            yneg_batch.append(cmf['neg'].iloc[i + j])
         x.append(x_batch)
         ypos.append(ypos_batch)
         yneg.append(yneg_batch)
-        x_batch, y_batch = [], []
+        x_batch, ypos_batch, yneg_batch = [], [], []
 
-    return torch.tensor(x).type(torch.FloatTensor), torch.tensor(ypos).type(torch.FloatTensor), torch.tensor(yneg).type(torch.FloatTensor)
+    return torch.tensor(x).type(torch.FloatTensor), torch.tensor(ypos).type(torch.LongTensor), torch.tensor(yneg).type(torch.LongTensor)
 
 
 if __name__ == "__main__":
