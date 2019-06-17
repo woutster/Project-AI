@@ -73,14 +73,15 @@ def train(args):
     neg_model.to(device)
 
     # Set up the loss and optimizer
-    pos_criterion = torch.nn.CrossEntropyLoss().to(device)
+    pos_criterion = torch.nn.MSELoss().to(device)
     pos_optimizer = torch.optim.RMSprop(pos_model.parameters(), lr=args.learning_rate)
 
-    neg_criterion = torch.nn.CrossEntropyLoss().to(device)
+    neg_criterion = torch.nn.MSELoss().to(device)
     neg_optimizer = torch.optim.RMSprop(pos_model.parameters(), lr=args.learning_rate)
 
     # Iterate over data
     for step, batch_inputs in enumerate(X):
+
 
         # TODO: reshape data?
         x = batch_inputs.view(1, args.batch_size, input_size)
@@ -93,15 +94,22 @@ def train(args):
         # p_acc = accuracy(p_out, Y_pos[step], args.batch_size)
         # n_acc = accuracy(n_out, Y_neg[step], args.batch_size)
 
-        print(Y_pos.shape, 'yshape')
-        # import pdb; pdb.set_trace()
         p_loss = pos_criterion(p_out.transpose(0,1), Y_pos[step].view(args.batch_size,1))
+
         p_loss.backward()
         pos_optimizer.step()
 
         n_loss = neg_criterion(n_out.transpose(0,1), Y_neg[step].view(args.batch_size, 1))
+
         n_loss.backward()
         neg_optimizer.step()
+
+        if step % args.eval_every == 0:
+            # import pdb; pdb.set_trace()
+            print("Training step: ", step)
+            print("Pos loss: ", p_loss.item())
+            print("Neg loss: ", n_loss.item())
+
 
 def accuracy(predictions, target, batch_size):
     prediction = predictions.argmax(dim=2)
@@ -134,6 +142,7 @@ def get_data(filename, batch_size):
     # return df
     return make_batches(df, batch_size)
 
+
 def make_batches(df, batch_size):
     x, ypos, yneg = [], [], []
     x_batch, ypos_batch, yneg_batch = [], [], []
@@ -158,7 +167,7 @@ def make_batches(df, batch_size):
         yneg.append(yneg_batch)
         x_batch, ypos_batch, yneg_batch = [], [], []
 
-    return torch.tensor(x).type(torch.FloatTensor), torch.tensor(ypos).type(torch.LongTensor), torch.tensor(yneg).type(torch.LongTensor)
+    return torch.tensor(x).type(torch.FloatTensor), torch.tensor(ypos).type(torch.FloatTensor), torch.tensor(yneg).type(torch.FloatTensor)
 
 
 if __name__ == "__main__":
@@ -173,8 +182,8 @@ if __name__ == "__main__":
 
     # Training params
     parser.add_argument('--batch_size', type=int, default=64, help='Number of examples to process in a batch')
-    parser.add_argument('--learning_rate', type=float, default=2e-3, help='Learning rate')
-    parser.add_argument('--device', type=str, default='cuda', help='Device to run on')
+    parser.add_argument('--learning_rate', type=float, default=1e-5, help='Learning rate')
+    parser.add_argument('--device', type=str, default='cpu', help='Device to run on')
 
     # It is not necessary to implement the following three params, but it may help training.
     parser.add_argument('--learning_rate_decay', type=float, default=0.96, help='Learning rate decay fraction')
@@ -183,6 +192,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--train_steps', type=int, default=int(1e6), help='Number of training steps')
     parser.add_argument('--max_norm', type=float, default=5.0, help='--')
+    parser.add_argument('--eval_every', type=float, default=100, help='--')
 
     # Bus specific
     parser.add_argument('--bus', type=str, default='proov_001', help='Bus to train data on.')
