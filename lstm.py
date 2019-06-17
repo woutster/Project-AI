@@ -179,6 +179,11 @@ def get_data(batch_size):
     return train, test
 
 def make_batches(df, batch_size, batch=True):
+    """
+    Makes batches out of the data.
+    Set the boolean batch to False if no batches are needed.
+    """
+
     x, ypos, yneg = [], [], []
     x_batch, ypos_batch, yneg_batch = [], [], []
 
