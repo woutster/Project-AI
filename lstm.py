@@ -99,7 +99,8 @@ def train(args):
         # neg_optimizer.step()
 
         if step % args.eval_every == 0:
-            
+            print(p_out)
+            print(Y_pos[step].mean())
             p_acc = accuracy(p_out, Y_pos[step], args.batch_size, args.acc_bound)
             # n_acc = accuracy(n_out, Y_neg[step], args.batch_size, args.acc_bound)
 
@@ -108,14 +109,15 @@ def train(args):
             # print("Neg loss: ", n_loss.item())
             print("Pos acc: ", p_acc)
             # print("Neg acc:", n_acc)
+            print('')
 
 
 def accuracy(predictions, target, batch_size, tolerance):
-    prediction = predictions.argmax(dim=2).float().numpy()[0]
+    prediction = predictions.detach().numpy()[0].T
 
     correct_array = np.isclose(target.numpy(), prediction, rtol=tolerance)
 
-    accuracy = np.sum(correct_array)/batch_size
+    accuracy = (np.count_nonzero(correct_array)/batch_size) * 100
 
     return accuracy
 
