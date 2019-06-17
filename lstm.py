@@ -8,6 +8,7 @@ import torch
 import pandas as pd
 import numpy as np
 
+
 class LSTM(nn.Module):
 
     def __init__(self, batch_size, input_size,
@@ -33,6 +34,7 @@ class LSTM(nn.Module):
         out = self.linear(out)
 
         return out, (h,c)
+
 
 def train(args):
 
@@ -85,8 +87,16 @@ def train(args):
         loss.backward()
         optimizer.step()
 
+
+def process_data(df):
+    df.dropna(inplace=True)
+    df = df.drop(['gps_point_entry', 'gps_point_exit'], axis=1).astype(np.float)
+    return df
+
+
 def get_data(filename):
     df = pd.read_csv(filename, sep=';')
+
     # print(df.columns)
     df['timestamp_in'] = df['Unnamed: 0']
     del df['Unnamed: 0']
@@ -96,7 +106,7 @@ def get_data(filename):
 
     df['timestamp_exit'] = pd.to_datetime(df['timestamp_exit'], format='%Y-%m-%d %H:%M:%S')
     df['timestamp_exit'] = df.timestamp_exit.values.astype(np.float64) // 10 ** 9
-
+    df = process_data(df)
     # return df
     return make_targets(df)
 
@@ -127,6 +137,7 @@ def make_targets(df):
     # print(x)
 
     return torch.from_numpy(x), torch.from_numpy(y)
+
 
 if __name__ == "__main__":
 
