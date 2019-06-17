@@ -5,7 +5,8 @@ import argparse
 
 import torch.nn as nn
 import torch
-import pandas as pd 
+import pandas as pd
+import numpy as np
 
 class LSTM(nn.Module):
 
@@ -46,12 +47,19 @@ def train(args):
 
     # TODO: data preproccessing
 
-    get_data(f'Data/{args.bus}/combined.csv')
-    return
+    X, Y = get_data(f'Data/{args.bus}/{args.bus}_merged_data.csv')
+    # del data['in_time']
+    # del data['out_time']
+    # del data['time']
+    # del data['date']
+    print(X.columns)
+
+    print(Y.columns)
+    input_size = len(data.columns)
 
     # Initialise model
     model = LSTM(batch_size=args.batch_size,
-                input_size=input_size,
+                input_size=input_size - 2,
                 lstm_num_hidden=args.lstm_num_hidden,
                 lstm_num_layers=args.lstm_num_layers,
                 device=device
@@ -63,11 +71,12 @@ def train(args):
     optimizer = torch.optim.RMSprop(model.parameters(), lr=args.learning_rate)
 
     # Iterate over data
-    for step, datapoint in enumerate(data):
-
+    for step, datapoint in X.iterrows():
+        print(datapoint.values.dtype)
         # TODO: reshape data?
-        x = datapoint
-
+        x = list(datapoint.values)
+        print(x)
+        x = torch.tensor(x[2:]).view(1,1,-1)
         optimizer.zero_grad()
         out, (h,c) = model(x)
 
@@ -77,8 +86,47 @@ def train(args):
         optimizer.step()
 
 def get_data(filename):
-    df = pd.read_csv(filename)
-    print(df.columns)
+    df = pd.read_csv(filename, sep=';')
+    # print(df.columns)
+    df['timestamp_in'] = df['Unnamed: 0']
+    del df['Unnamed: 0']
+
+    df['timestamp_in'] = pd.to_datetime(df['timestamp_in'], format='%Y-%m-%d %H:%M:%S')
+    df['timestamp_in'] = df.timestamp_in.values.astype(np.float64) // 10 ** 9
+
+    df['timestamp_exit'] = pd.to_datetime(df['timestamp_exit'], format='%Y-%m-%d %H:%M:%S')
+    df['timestamp_exit'] = df.timestamp_exit.values.astype(np.float64) // 10 ** 9
+
+    # return df
+    return make_targets(df)
+
+
+def make_targets(df):
+    lenin = df.shape[0]
+
+    x, y = [], []
+    # print(df['cmf_pos'])
+
+    cmf = pd.DataFrame()
+    cmf['pos'] = df['cmf_pos']
+    cmf['neg'] = df['cmf_neg']
+    # del df['cmf_pos']
+    # del df['cmf_neg']
+    import math
+    for i, row in df.iterrows():
+        if i == lenin:
+            break
+        if math.isnan(row['cmf_neg']):
+            continue
+
+        x.append(row.values[2:])
+        y.append((cmf['pos'].iloc[i], cmf['neg'].iloc[i]))
+    x = np.array(x[:-100])
+    y = np.array(y[:-100])
+    # print(y)
+    # print(x)
+
+    return torch.from_numpy(x), torch.from_numpy(y)
 
 if __name__ == "__main__":
 
@@ -93,7 +141,7 @@ if __name__ == "__main__":
     # Training params
     parser.add_argument('--batch_size', type=int, default=64, help='Number of examples to process in a batch')
     parser.add_argument('--learning_rate', type=float, default=2e-3, help='Learning rate')
-    parser.add_argument('--device', type=str, default='cuda:0', help='Device to run on')
+    parser.add_argument('--device', type=str, default='cuda', help='Device to run on')
 
     # It is not necessary to implement the following three params, but it may help training.
     parser.add_argument('--learning_rate_decay', type=float, default=0.96, help='Learning rate decay fraction')
