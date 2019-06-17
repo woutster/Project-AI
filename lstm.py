@@ -49,42 +49,67 @@ def train(args):
 
     # TODO: data preproccessing
 
-    X, Y = get_data(f'Data/{args.bus}/{args.bus}_merged_data.csv', args.batch_size)
+    X, Y_pos, Y_neg = get_data(f'Data/{args.bus}/{args.bus}_merged_data.csv', args.batch_size)
 
-    print('xshape', X.shape)
     input_size = X.shape[2]
 
     # Initialise model
-    model = LSTM(batch_size=args.batch_size,
+    pos_model = LSTM(batch_size=args.batch_size,
                 input_size=input_size,
                 lstm_num_hidden=args.lstm_num_hidden,
                 lstm_num_layers=args.lstm_num_layers,
                 device=device
     )
-    model.to(device)
+    pos_model.to(device)
+
+    neg_model = LSTM(batch_size=args.batch_size,
+                input_size=input_size,
+                lstm_num_hidden=args.lstm_num_hidden,
+                lstm_num_layers=args.lstm_num_layers,
+                device=device
+    )
+    neg_model.to(device)
 
     # Set up the loss and optimizer
-    criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.RMSprop(model.parameters(), lr=args.learning_rate)
+    pos_criterion = torch.nn.CrossEntropyLoss().to(device)
+    pos_optimizer = torch.optim.RMSprop(pos_model.parameters(), lr=args.learning_rate)
 
-    print(input_size)
+    neg_criterion = torch.nn.CrossEntropyLoss().to(device)
+    neg_optimizer = torch.optim.RMSprop(pos_model.parameters(), lr=args.learning_rate)
+
     # Iterate over data
     for step, batch_inputs in enumerate(X):
 
         # TODO: reshape data?
-        x = batch_inputs.view(args.batch_size, input_size, 1)
-        print(x.shape)
+        x = batch_inputs.view(1, args.batch_size, input_size)
 
-        print(x.shape)
+        pos_optimizer.zero_grad()
+        neg_optimizer.zero_grad()
+
+        p_out, (ph,pc) = pos_model(x)
+        n_out, (nh, nc) = neg_model(x)
+        # p_acc = accuracy(p_out, Y_pos[step], args.batch_size)
+        # n_acc = accuracy(n_out, Y_neg[step], args.batch_size)
+
+        print(p_out)
+        print(Y_pos[step].shape, 'yshape')
 
 
-        optimizer.zero_grad()
-        out, (h,c) = model(x)
+        p_loss = pos_criterion(p_out.transpose(0,1), Y_pos[step])
+        p_loss.backward()
+        pos_optimizer.step()
 
-        # TODO: not reshape data?
-        loss = criterion(out.transpose(2,1), Y[i])
-        loss.backward()
-        optimizer.step()
+        n_loss = neg_criterion(n_out.transpose(2,1), Y_neg[step])
+        n_loss.backward()
+        neg_optimizer.step()
+
+def accuracy(predictions, target, batch_size):
+    prediction = predictions.argmax(dim=2)
+    target = targets
+
+    accuracy = (target == prediction).float().sum() / batch_size
+
+    return accuracy.item()
 
 
 def process_data(df):
@@ -110,8 +135,8 @@ def get_data(filename, batch_size):
     return make_batches(df, batch_size)
 
 def make_batches(df, batch_size):
-    x, y = [], []
-    x_batch, y_batch = [], []
+    x, ypos, yneg = [], [], []
+    x_batch, ypos_batch, yneg_batch = [], [], []
 
     cmf = pd.DataFrame()
     cmf['pos'] = df['cmf_pos']
@@ -126,12 +151,15 @@ def make_batches(df, batch_size):
             break
         for j in range(batch_size):
             x_batch.append(df.iloc[i].values)
-            y_batch.append((cmf['pos'].iloc[i], cmf['neg'].iloc[i]))
+            ypos_batch.append(cmf['pos'].iloc[i])
+            yneg_batch.append(cmf['neg'].iloc[i])
         x.append(x_batch)
-        y.append(y_batch)
+        ypos.append(ypos_batch)
+        yneg.append(yneg_batch)
         x_batch, y_batch = [], []
 
-    return torch.tensor(x), torch.tensor(y)
+    return torch.tensor(x).type(torch.FloatTensor), torch.tensor(ypos).type(torch.FloatTensor), torch.tensor(yneg).type(torch.FloatTensor)
+
 
 if __name__ == "__main__":
 
