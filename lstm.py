@@ -22,7 +22,7 @@ class LSTM(nn.Module):
                     hidden_size=lstm_num_hidden,
                     num_layers=lstm_num_layers,
                     bidirectional=False,
-                    batch_first=True
+                    batch_first=False
         )
 
         self.linear = nn.Linear(lstm_num_hidden, input_size, bias=True)
@@ -49,19 +49,14 @@ def train(args):
 
     # TODO: data preproccessing
 
-    X, Y = get_data(f'Data/{args.bus}/{args.bus}_merged_data.csv')
-    # del data['in_time']
-    # del data['out_time']
-    # del data['time']
-    # del data['date']
-    print(X.columns)
+    X, Y = get_data(f'Data/{args.bus}/{args.bus}_merged_data.csv', args.batch_size)
 
-    print(Y.columns)
-    input_size = len(data.columns)
+    print('xshape', X.shape)
+    input_size = X.shape[2]
 
     # Initialise model
     model = LSTM(batch_size=args.batch_size,
-                input_size=input_size - 2,
+                input_size=input_size,
                 lstm_num_hidden=args.lstm_num_hidden,
                 lstm_num_layers=args.lstm_num_layers,
                 device=device
@@ -72,18 +67,22 @@ def train(args):
     criterion = torch.nn.CrossEntropyLoss().to(device)
     optimizer = torch.optim.RMSprop(model.parameters(), lr=args.learning_rate)
 
+    print(input_size)
     # Iterate over data
-    for step, datapoint in X.iterrows():
-        print(datapoint.values.dtype)
+    for step, batch_inputs in enumerate(X):
+
         # TODO: reshape data?
-        x = list(datapoint.values)
-        print(x)
-        x = torch.tensor(x[2:]).view(1,1,-1)
+        x = batch_inputs.view(args.batch_size, input_size, 1)
+        print(x.shape)
+
+        print(x.shape)
+
+
         optimizer.zero_grad()
         out, (h,c) = model(x)
 
         # TODO: not reshape data?
-        loss = criterion(out.transpose(2,1), y)
+        loss = criterion(out.transpose(2,1), Y[i])
         loss.backward()
         optimizer.step()
 
@@ -94,7 +93,7 @@ def process_data(df):
     return df
 
 
-def get_data(filename):
+def get_data(filename, batch_size):
     df = pd.read_csv(filename, sep=';')
 
     # print(df.columns)
@@ -108,36 +107,31 @@ def get_data(filename):
     df['timestamp_exit'] = df.timestamp_exit.values.astype(np.float64) // 10 ** 9
     df = process_data(df)
     # return df
-    return make_targets(df)
+    return make_batches(df, batch_size)
 
-
-def make_targets(df):
-    lenin = df.shape[0]
-
+def make_batches(df, batch_size):
     x, y = [], []
-    # print(df['cmf_pos'])
+    x_batch, y_batch = [], []
 
     cmf = pd.DataFrame()
     cmf['pos'] = df['cmf_pos']
     cmf['neg'] = df['cmf_neg']
-    # del df['cmf_pos']
-    # del df['cmf_neg']
-    import math
-    for i, row in df.iterrows():
-        if i == lenin:
+    del df['cmf_pos']
+    del df['cmf_neg']
+
+    iter = 0
+    lenin = len(df)
+    for i in range(lenin):
+        if i + batch_size >= lenin:
             break
-        if math.isnan(row['cmf_neg']):
-            continue
+        for j in range(batch_size):
+            x_batch.append(df.iloc[i].values)
+            y_batch.append((cmf['pos'].iloc[i], cmf['neg'].iloc[i]))
+        x.append(x_batch)
+        y.append(y_batch)
+        x_batch, y_batch = [], []
 
-        x.append(row.values[2:])
-        y.append((cmf['pos'].iloc[i], cmf['neg'].iloc[i]))
-    x = np.array(x[:-100])
-    y = np.array(y[:-100])
-    # print(y)
-    # print(x)
-
-    return torch.from_numpy(x), torch.from_numpy(y)
-
+    return torch.tensor(x), torch.tensor(y)
 
 if __name__ == "__main__":
 
