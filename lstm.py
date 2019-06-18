@@ -19,10 +19,10 @@ class BusDataset(data.Dataset):
     def __init__(self, bus, train):
         if train:
             self.df = pd.read_csv(f'Data/proov_001/proov_001_merged_data.csv', sep=';')
-            self.df2 = pd.read_csv(f'Data/proov_002/proov_002_merged_data.csv', sep=';')
+            self.df2 = pd.read_csv(f'Data/proov_003/proov_003_merged_data.csv', sep=';')
             self.df = self.df.append(self.df2, ignore_index=True)
         else:
-            self.df = pd.read_csv(f'Data/proov_003/proov_003_merged_data.csv', sep=';')
+            self.df = pd.read_csv(f'Data/proov_002/proov_002_merged_data.csv', sep=';')
 
 
         # Maybe remove columns
@@ -47,7 +47,7 @@ class BusDataset(data.Dataset):
 
     def process_data(self, df):
         df.dropna(inplace=True)
-        df = df.drop(['gps_point_entry', 'gps_point_exit'], axis=1).astype(np.float)
+        df = df.drop(['gps_point_entry', 'gps_point_exit', 'timestamp_in', 'timestamp_exit'], axis=1).astype(np.float)
         return df
 
     def __getitem__(self, item):
@@ -66,7 +66,7 @@ class BusDataset(data.Dataset):
 
 class LSTM(nn.Module):
 
-    def __init__(self, batch_size, input_size, output_size,
+    def __init__(self, batch_size, input_size, output_size, dropout,
                  lstm_num_hidden=256, lstm_num_layers=2, device='cuda'):
         super(LSTM, self).__init__()
 
@@ -76,7 +76,8 @@ class LSTM(nn.Module):
             hidden_size=lstm_num_hidden,
             num_layers=lstm_num_layers,
             bidirectional=False,
-            batch_first=False
+            batch_first=False,
+            dropout=dropout
         )
 
         self.linear = nn.Linear(lstm_num_hidden, output_size, bias=True)
@@ -90,7 +91,7 @@ class LSTM(nn.Module):
         return out, (h, c)
 
 
-def make_plots(pos_pred, pos_train, neg_pred, neg_train):
+def make_plots(pos_pred, pos_train, neg_pred, neg_train, pos_test, neg_test):
     pos_targets, pos_out = pos_pred
     plt.subplot(2, 2, 1)
     plt.plot(pos_targets, color='r', label='Targets')
@@ -121,6 +122,26 @@ def make_plots(pos_pred, pos_train, neg_pred, neg_train):
 
     plt.show()
 
+    plt.subplot(2,1,1)
+    pred_pos, target_pos = pos_test
+    pred_pos = np.array(pred_pos).ravel()
+    target_pos = target_pos.numpy()
+    plt.plot(target_pos, color='b', label='target')
+    plt.plot(pred_pos, color='r', label='prediction')
+    plt.title("Prediction vs target test set")
+    plt.legend()
+
+    plt.subplot(2, 1, 2)
+    pred_neg, target_neg = neg_test
+    pred_neg = np.array(pred_neg).ravel()
+    target_neg = target_neg.numpy()
+    plt.plot(target_neg, color='b', label='target')
+    plt.plot(pred_neg, color='r', label='prediction')
+    plt.title("Prediction vs target test set")
+    plt.legend()
+
+    plt.show()
+
 
 def accuracy(predictions, target, batch_size, tolerance):
     prediction = predictions.detach().numpy()[0].T
@@ -128,6 +149,7 @@ def accuracy(predictions, target, batch_size, tolerance):
 
     diff_array = np.abs(prediction - target)
     return ((diff_array <= tolerance).sum()/batch_size) * 100
+
 
 def train(args):
     # Initialize the device which to run the model on
@@ -153,7 +175,8 @@ def train(args):
                      lstm_num_hidden=args.lstm_num_hidden,
                      lstm_num_layers=args.lstm_num_layers,
                      device=device,
-                     output_size=1
+                     output_size=1,
+                     dropout=args.dropout_keep_prob
                      )
     pos_model.to(device)
 
@@ -162,105 +185,111 @@ def train(args):
                      lstm_num_hidden=args.lstm_num_hidden,
                      lstm_num_layers=args.lstm_num_layers,
                      device=device,
-                     output_size=1
+                     output_size=1,
+                     dropout=args.dropout_keep_prob
                      )
     neg_model.to(device)
 
     # Set up the loss and optimizer
-    pos_criterion = torch.nn.L1Loss().to(device)
-    pos_optimizer = torch.optim.Adam(pos_model.parameters(), lr=args.learning_rate)
+    pos_criterion = torch.nn.MSELoss().to(device)
+    pos_optimizer = torch.optim.SGD(pos_model.parameters(), lr=args.learning_rate)
 
-    neg_criterion = torch.nn.L1Loss().to(device)
-    neg_optimizer = torch.optim.Adam(neg_model.parameters(), lr=args.learning_rate)
-
-    # Plotting prep
-    all_pos_targets = []
-    all_pos_outs = []
-    all_pos_losses = []
-    all_pos_accuracies = []
-    all_neg_targets = []
-    all_neg_outs = []
-    all_neg_losses = []
-    all_neg_accuracies = []
+    neg_criterion = torch.nn.MSELoss().to(device)
+    neg_optimizer = torch.optim.SGD(neg_model.parameters(), lr=args.learning_rate)
 
     # Iterate over data
-    for step, (batch_inputs, pos_targets, neg_targets) in enumerate(train_data_loader):
+    for epoch in range(0, args.train_steps):
+        # Plotting prep
+        all_pos_targets = []
+        all_pos_outs = []
+        all_pos_losses = []
+        all_pos_accuracies = []
+        all_neg_targets = []
+        all_neg_outs = []
+        all_neg_losses = []
+        all_neg_accuracies = []
+        print("Training epoch", epoch)
+        for step, (batch_inputs, pos_targets, neg_targets) in enumerate(train_data_loader):
 
-        # print(batch_inputs.shape)
-        if batch_inputs.shape[0] != args.batch_size:
-            continue
+            # print(batch_inputs.shape)
+            if batch_inputs.shape[0] != args.batch_size:
+                continue
 
-        x = batch_inputs.view(1, args.batch_size, input_size)
+            x = batch_inputs.view(1, args.batch_size, input_size)
 
-        pos_optimizer.zero_grad()
-        neg_optimizer.zero_grad()
+            pos_optimizer.zero_grad()
+            neg_optimizer.zero_grad()
 
-        p_out, _ = pos_model(x)
-        n_out, _ = neg_model(x)
+            p_out, _ = pos_model(x)
+            n_out, _ = neg_model(x)
 
-        p_loss = pos_criterion(p_out.transpose(0, 1), pos_targets.view(args.batch_size, 1))
-        p_loss.backward()
-        pos_optimizer.step()
+            p_loss = pos_criterion(p_out.transpose(0, 1), pos_targets.view(args.batch_size, 1))
+            p_loss.backward()
+            pos_optimizer.step()
 
-        # import pdb; pdb.set_trace()
-        n_loss = neg_criterion(n_out.transpose(0, 1), neg_targets.view(args.batch_size, 1))
-        n_loss.backward()
-        neg_optimizer.step()
+            # import pdb; pdb.set_trace()
+            n_loss = neg_criterion(n_out.transpose(0, 1), neg_targets.view(args.batch_size, 1))
+            n_loss.backward()
+            neg_optimizer.step()
 
-        p_acc = accuracy(p_out, pos_targets, args.batch_size, args.acc_bound)
-        n_acc = accuracy(n_out, neg_targets, args.batch_size, args.acc_bound)
-
-        # Plotting statistics
-        all_pos_targets.extend(pos_targets.tolist())
-        all_pos_outs.extend(p_out.view(args.batch_size).tolist())
-        all_pos_losses.append(p_loss.item())
-        all_pos_accuracies.append(p_acc)
-        all_neg_targets.extend(neg_targets.tolist())
-        all_neg_outs.extend(n_out.view(args.batch_size).tolist())
-        all_neg_losses.append(n_loss.item())
-        all_neg_accuracies.append(n_acc)
-
-        if step % args.eval_every == 0:
             p_acc = accuracy(p_out, pos_targets, args.batch_size, args.acc_bound)
             n_acc = accuracy(n_out, neg_targets, args.batch_size, args.acc_bound)
 
-            print("Training step: ", step)
-            print("Pos loss: ", p_loss.item())
-            print("Neg loss: ", n_loss.item())
-            print("Pos acc: ", p_acc, "%")
-            print("Neg acc:", n_acc, "%")
-            print('')
+            # Plotting statistics
+            all_pos_targets.extend(pos_targets.tolist())
+            all_pos_outs.extend(p_out.view(args.batch_size).tolist())
+            all_pos_losses.append(p_loss.item())
+            all_pos_accuracies.append(p_acc)
+            all_neg_targets.extend(neg_targets.tolist())
+            all_neg_outs.extend(n_out.view(args.batch_size).tolist())
+            all_neg_losses.append(n_loss.item())
+            all_neg_accuracies.append(n_acc)
 
-        if step == 2500:
-            break
+            if step % args.eval_every == 0:
+                p_acc = accuracy(p_out, pos_targets, args.batch_size, args.acc_bound)
+                n_acc = accuracy(n_out, neg_targets, args.batch_size, args.acc_bound)
+
+                print("Training step: ", step)
+                print("Pos loss: ", p_loss.item())
+                print("Neg loss: ", n_loss.item())
+                print("Pos acc: ", p_acc, "%")
+                print("Neg acc:", n_acc, "%")
+        print('----')
 
     print("Done training...\n")
     print("Testing...")
 
-    for step, (test_inputs, pos_targets, neg_targets) in enumerate(test_data_loader):
+    pos_pred_test = []
+    neg_pred_test = []
 
-        x = test_inputs.view(1, test_inputs.shape[0], input_size)
+    for epoch, (test_inputs, pos_targets, neg_targets) in enumerate(test_data_loader):
 
-        import pdb; pdb.set_trace()
+        for _, x in enumerate(test_inputs):
 
-        pos_optimizer.zero_grad()
-        neg_optimizer.zero_grad()
+            pos_optimizer.zero_grad()
+            neg_optimizer.zero_grad()
 
-        p_test_out, _ = pos_model(x)
-        n_test_out, _ = neg_model(x)
+            x = x.view(1, 1, input_size)
+            p_test_out, _ = pos_model(x)
+            n_test_out, _ = neg_model(x)
 
-        p_test_loss = pos_criterion(p_test_out.transpose(0, 1), pos_targets.view(pos_targets.shape[0], 1))
-        p_test_acc = accuracy(p_test_out, pos_targets, len(p_test_out[0]), args.acc_bound)
-        n_test_loss = pos_criterion(n_test_out.transpose(0, 1), neg_targets.view(neg_targets.shape[0], 1))
-        n_test_acc = accuracy(n_test_out, neg_targets, len(n_test_out[0]), args.acc_bound)
+            pos_pred_test.append(p_test_out.detach().numpy()[0])
+            neg_pred_test.append(n_test_out.detach().numpy()[0])
+
+    pos_pred_test_torch = torch.from_numpy(np.array(pos_pred_test))
+    neg_pred_test_torch = torch.from_numpy(np.array(neg_pred_test))
+
+    p_test_loss = pos_criterion(pos_pred_test_torch.transpose(0, 1), pos_targets.view(pos_targets.shape[0], 1))
+    p_test_acc = accuracy(pos_pred_test_torch.transpose(0, 1), pos_targets, len(pos_pred_test), args.acc_bound)
+    n_test_loss = pos_criterion(neg_pred_test_torch.transpose(0, 1), neg_targets.view(neg_targets.shape[0], 1))
+    n_test_acc = accuracy(neg_pred_test_torch.transpose(0, 1), neg_targets, len(neg_pred_test), args.acc_bound)
 
     print("Pos loss:", p_test_loss.item())
     print("Neg loss: ", n_test_loss.item())
     print("Pos acc:", p_test_acc, "%")
     print("Neg acc:", n_test_acc, "%")
     print('')
-    make_plots((all_pos_targets, all_pos_outs), (all_pos_losses, all_pos_accuracies), (all_neg_targets, all_neg_outs), (all_neg_losses, all_neg_accuracies))
-
+    make_plots((all_pos_targets, all_pos_outs), (all_pos_losses, all_pos_accuracies), (all_neg_targets, all_neg_outs), (all_neg_losses, all_neg_accuracies), (pos_pred_test, pos_targets), (neg_pred_test, neg_targets))
 
 
 if __name__ == "__main__":
@@ -268,27 +297,25 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     # Model params
-    # parser.add_argument('--output_seq_length', type=int, default=30, help='Length of an input sequence')
-    parser.add_argument('--lstm_num_hidden', type=int, default=128, help='Number of hidden units in the LSTM')
-    parser.add_argument('--lstm_num_layers', type=int, default=2, help='Number of LSTM layers in the model')
+    parser.add_argument('--lstm_num_hidden', type=int, default=1, help='Number of hidden units in the LSTM')
+    parser.add_argument('--lstm_num_layers', type=int, default=1, help='Number of LSTM layers in the model')
 
     # Training params
     parser.add_argument('--batch_size', type=int, default=64, help='Number of examples to process in a batch')
-    parser.add_argument('--learning_rate', type=float, default=1e-4, help='Learning rate')
+    parser.add_argument('--learning_rate', type=float, default=1e-2, help='Learning rate')
     parser.add_argument('--device', type=str, default='cpu', help='Device to run on')
 
     # It is not necessary to implement the following three params, but it may help training.
-    parser.add_argument('--learning_rate_decay', type=float, default=0.96, help='Learning rate decay fraction')
-    parser.add_argument('--learning_rate_step', type=int, default=5000, help='Learning rate step')
-    parser.add_argument('--dropout_keep_prob', type=float, default=1.0, help='Dropout keep probability')
+    # parser.add_argument('--learning_rate_decay', type=float, default=0.96, help='Learning rate decay fraction')
+    # parser.add_argument('--learning_rate_step', type=int, default=5000, help='Learning rate step')
+    parser.add_argument('--dropout_keep_prob', type=float, default=0, help='Dropout keep probability')
 
-    parser.add_argument('--train_steps', type=int, default=int(1e6), help='Number of training steps')
-    parser.add_argument('--max_norm', type=float, default=5.0, help='--')
-    parser.add_argument('--eval_every', type=float, default=500, help='--')
-    parser.add_argument('--acc_bound', type=float, default=1, help='--')
+    parser.add_argument('--train_steps', type=int, default=int(1), help='Number of training steps')
+    parser.add_argument('--eval_every', type=float, default=100, help='--')
+    parser.add_argument('--acc_bound', type=float, default=0.5, help='--')
 
     # Bus specific
-    parser.add_argument('--bus', type=str, default='proov_001', help='Bus to train data on.')
+    # parser.add_argument('--bus', type=str, default='proov_001', help='Bus to train data on.')
 
     args = parser.parse_args()
 
