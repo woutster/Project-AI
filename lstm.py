@@ -35,7 +35,7 @@ class BusDataset(data.Dataset):
         self.df['timestamp_exit'] = pd.to_datetime(self.df['timestamp_exit'], format='%Y-%m-%d %H:%M:%S')
         self.df['timestamp_exit'] = self.df.timestamp_exit.values.astype(np.float64) // 10 ** 9
 
-        self.df = process_data(self.df)
+        self.df = self.process_data(self.df)
 
         self.cmf = pd.DataFrame()
         self.cmf['pos'] = self.df['cmf_pos']
@@ -43,26 +43,9 @@ class BusDataset(data.Dataset):
         del self.df['cmf_pos']
         del self.df['cmf_neg']
 
-
-        # self.df3['timestamp_in'] = self.df3['Unnamed: 0']
-        # del self.df3['Unnamed: 0']
-        #
-        # self.df3['timestamp_in'] = pd.to_datetime(self.df3['timestamp_in'], format='%Y-%m-%d %H:%M:%S')
-        # self.df3['timestamp_in'] = self.df3.timestamp_in.values.astype(np.float64) // 10 ** 9
-        #
-        # self.df3['timestamp_exit'] = pd.to_datetime(self.df3['timestamp_exit'], format='%Y-%m-%d %H:%M:%S')
-        # self.df3['timestamp_exit'] = self.df3.timestamp_exit.values.astype(np.float64) // 10 ** 9
-        # self.df3 = process_data(self.df3)
-        #
-        # self.test_cmf = pd.DataFrame()
-        # self.test_cmf['pos'] = self.df3['cmf_pos']
-        # self.test_cmf['neg'] = self.df3['cmf_neg']
-        # del self.df3['cmf_pos']
-        # del self.df3['cmf_neg']
-
         self.data_size = self.df.shape[0]
 
-    def process_data(df):
+    def process_data(self, df):
         df.dropna(inplace=True)
         df = df.drop(['gps_point_entry', 'gps_point_exit'], axis=1).astype(np.float)
         return df
@@ -107,6 +90,45 @@ class LSTM(nn.Module):
         return out, (h, c)
 
 
+def make_plots(pos_pred, pos_train, neg_pred, neg_train):
+    pos_targets, pos_out = pos_pred
+    plt.subplot(2, 2, 1)
+    plt.plot(pos_targets, color='r', label='Targets')
+    plt.plot(pos_out, color='b', label='Predictions')
+    plt.title("Positive cmf targets vs the predicted positive cmf")
+    plt.legend()
+
+    pos_loss, pos_acc = pos_train
+    plt.subplot(2, 2, 2)
+    plt.plot(pos_loss, color='r', label='Loss')
+    plt.plot(pos_acc, color='b', label='Accuracy')
+    plt.title("Loss and accuracy of the trained positive model")
+    plt.legend()
+
+    neg_targets, neg_out = neg_pred
+    plt.subplot(2, 2, 3)
+    plt.plot(neg_targets, color='r', label='Targets')
+    plt.plot(neg_out, color='b', label='Predictions')
+    plt.title("Negative cmf targets vs the predicted negative cmf")
+    plt.legend()
+
+    neg_loss, neg_acc = neg_train
+    plt.subplot(2, 2, 4)
+    plt.plot(neg_loss, color='r', label='Loss')
+    plt.plot(neg_acc, color='b', label='Accuracy')
+    plt.title("Loss and accuracy of the trained negative model")
+    plt.legend()
+
+    plt.show()
+
+
+def accuracy(predictions, target, batch_size, tolerance):
+    prediction = predictions.detach().numpy()[0].T
+    target = target.numpy()
+
+    diff_array = np.abs(prediction - target)
+    return ((diff_array <= tolerance).sum()/batch_size) * 100
+
 def train(args):
     # Initialize the device which to run the model on
     if args.device == 'cuda':
@@ -145,11 +167,11 @@ def train(args):
     neg_model.to(device)
 
     # Set up the loss and optimizer
-    pos_criterion = torch.nn.MSELoss().to(device)
-    pos_optimizer = torch.optim.RMSprop(pos_model.parameters(), lr=args.learning_rate)
+    pos_criterion = torch.nn.L1Loss().to(device)
+    pos_optimizer = torch.optim.Adam(pos_model.parameters(), lr=args.learning_rate)
 
-    neg_criterion = torch.nn.MSELoss().to(device)
-    neg_optimizer = torch.optim.RMSprop(neg_model.parameters(), lr=args.learning_rate)
+    neg_criterion = torch.nn.L1Loss().to(device)
+    neg_optimizer = torch.optim.Adam(neg_model.parameters(), lr=args.learning_rate)
 
     # Plotting prep
     all_pos_targets = []
@@ -164,6 +186,7 @@ def train(args):
     # Iterate over data
     for step, (batch_inputs, pos_targets, neg_targets) in enumerate(train_data_loader):
 
+        # print(batch_inputs.shape)
         if batch_inputs.shape[0] != args.batch_size:
             continue
 
@@ -172,8 +195,8 @@ def train(args):
         pos_optimizer.zero_grad()
         neg_optimizer.zero_grad()
 
-        p_out, (ph, pc) = pos_model(x)
-        n_out, (nh, nc) = neg_model(x)
+        p_out, _ = pos_model(x)
+        n_out, _ = neg_model(x)
 
         p_loss = pos_criterion(p_out.transpose(0, 1), pos_targets.view(args.batch_size, 1))
         p_loss.backward()
@@ -205,7 +228,7 @@ def train(args):
             print("Pos loss: ", p_loss.item())
             print("Neg loss: ", n_loss.item())
             print("Pos acc: ", p_acc, "%")
-            print("Neg acc:", n_acc)
+            print("Neg acc:", n_acc, "%")
             print('')
 
     print("Done training...\n")
@@ -218,120 +241,21 @@ def train(args):
         pos_optimizer.zero_grad()
         neg_optimizer.zero_grad()
 
-        p_out, (ph, pc) = pos_model(x)
-        n_out, (nh, nc) = neg_model(x)
+        p_test_out, _ = pos_model(x)
+        n_test_out, _ = neg_model(x)
 
-        p_test_loss = pos_criterion(p_out.transpose(0, 1), pos_targets.view(pos_targets.shape[0], 1))
-        p_test_acc = accuracy(p_out, pos_targets, args.batch_size, args.acc_bound)
-        n_test_loss = neg_criterion(p_out.transpose(0, 1), neg_targets.view(neg_targets.shape[0], 1))
-        n_test_acc = accuracy(n_out, pos_targets, args.batch_size, args.acc_bound)
-
+        p_test_loss = pos_criterion(p_test_out.transpose(0, 1), pos_targets.view(pos_targets.shape[0], 1))
+        p_test_acc = accuracy(p_test_out, pos_targets, len(p_test_out[0]), args.acc_bound)
+        n_test_loss = pos_criterion(n_test_out.transpose(0, 1), neg_targets.view(neg_targets.shape[0], 1))
+        n_test_acc = accuracy(n_test_out, neg_targets, len(n_test_out[0]), args.acc_bound)
 
     print("Pos loss:", p_test_loss.item())
-    print("Neg loss: ", n_loss.item())
+    print("Neg loss: ", n_test_loss.item())
     print("Pos acc:", p_test_acc, "%")
-    print("Neg acc:", n_acc)
+    print("Neg acc:", n_test_acc, "%")
     print('')
+    make_plots((all_pos_targets, all_pos_outs), (all_pos_losses, all_pos_accuracies), (all_neg_targets, all_neg_outs), (all_neg_losses, all_neg_accuracies))
 
-    plt.plot(all_pos_targets)
-    plt.plot(all_pos_outs)
-    plt.savefig("pos_targets.pdf")
-    plt.show()
-
-
-def accuracy(predictions, target, batch_size, tolerance):
-    prediction = predictions.detach().numpy()[0].T
-    target = target.numpy()
-
-    diff_array = np.abs(prediction - target)
-    return ((diff_array <= tolerance).sum()/batch_size) * 100
-
-
-def process_data(df):
-    df.dropna(inplace=True)
-    df = df.drop(['gps_point_entry', 'gps_point_exit'], axis=1).astype(np.float)
-    return df
-
-
-def get_data(batch_size):
-    df = pd.read_csv(f'Data/proov_001/proov_001_merged_data.csv', sep=';')
-    df2 = pd.read_csv(f'Data/proov_002/proov_002_merged_data.csv', sep=';')
-    df3 = pd.read_csv(f'Data/proov_003/proov_003_merged_data.csv', sep=';')
-
-    df = df.append(df2, ignore_index=True)
-
-    # Maybe remove columns
-    df['timestamp_in'] = df['Unnamed: 0']
-    del df['Unnamed: 0']
-
-    df['timestamp_in'] = pd.to_datetime(df['timestamp_in'], format='%Y-%m-%d %H:%M:%S')
-    df['timestamp_in'] = df.timestamp_in.values.astype(np.float64) // 10 ** 9
-
-    df['timestamp_exit'] = pd.to_datetime(df['timestamp_exit'], format='%Y-%m-%d %H:%M:%S')
-    df['timestamp_exit'] = df.timestamp_exit.values.astype(np.float64) // 10 ** 9
-    df = process_data(df)
-
-    df3['timestamp_in'] = df3['Unnamed: 0']
-    del df3['Unnamed: 0']
-
-    df3['timestamp_in'] = pd.to_datetime(df3['timestamp_in'], format='%Y-%m-%d %H:%M:%S')
-    df3['timestamp_in'] = df3.timestamp_in.values.astype(np.float64) // 10 ** 9
-
-    df3['timestamp_exit'] = pd.to_datetime(df3['timestamp_exit'], format='%Y-%m-%d %H:%M:%S')
-    df3['timestamp_exit'] = df3.timestamp_exit.values.astype(np.float64) // 10 ** 9
-    df3 = process_data(df3)
-
-    train = make_batches(df, batch_size)
-    test = make_batches(df3, batch_size, batch = False)
-
-    return train, test
-
-def make_batches(df, batch_size, batch=True):
-    """
-    Makes batches out of the data.
-    Set the boolean batch to False if no batches are needed.
-    """
-
-    x, ypos, yneg = [], [], []
-    x_batch, ypos_batch, yneg_batch = [], [], []
-
-    cmf = pd.DataFrame()
-    cmf['pos'] = df['cmf_pos']
-    cmf['neg'] = df['cmf_neg']
-    del df['cmf_pos']
-    del df['cmf_neg']
-
-    data = {}
-    data['inputs'] = df
-    data['targets'] = cmf
-
-    if batch:
-        return DataLoader(data, batch_size=batch_size)
-    else:
-        return DataLoader(data, batch_size=1)
-    #
-    # iter = 0
-    # lenin = len(df)
-    #
-    # if batch:
-    #     for i in range(lenin):
-    #         if i + batch_size >= lenin:
-    #             break
-    #         for j in range(batch_size):
-    #             x_batch.append(df.iloc[i + j].values)
-    #             ypos_batch.append(cmf['pos'].iloc[i + j])
-    #             yneg_batch.append(cmf['neg'].iloc[i + j])
-    #         x.append(x_batch)
-    #         ypos.append(ypos_batch)
-    #         yneg.append(yneg_batch)
-    #         x_batch, ypos_batch, yneg_batch = [], [], []
-    # else:
-    #     x = df.values
-    #     ypos = cmf['pos'].values
-    #     yneg = cmf['neg'].values
-    #
-    # return torch.tensor(x).type(torch.FloatTensor), torch.tensor(ypos).type(torch.FloatTensor), torch.tensor(yneg).type(
-    #     torch.FloatTensor)
 
 
 if __name__ == "__main__":
@@ -355,7 +279,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--train_steps', type=int, default=int(1e6), help='Number of training steps')
     parser.add_argument('--max_norm', type=float, default=5.0, help='--')
-    parser.add_argument('--eval_every', type=float, default=100, help='--')
+    parser.add_argument('--eval_every', type=float, default=500, help='--')
     parser.add_argument('--acc_bound', type=float, default=0.5, help='--')
 
     # Bus specific
