@@ -254,6 +254,9 @@ def train(args):
             print("Neg acc:", n_acc, "%")
             print('')
 
+        if step == 2500:
+            break
+
     print("Done training...\n")
     x = X_test.view(1, X_test.shape[0], input_size)
 
@@ -304,7 +307,7 @@ if __name__ == "__main__":
     parser.add_argument('--train_steps', type=int, default=int(1e6), help='Number of training steps')
     parser.add_argument('--max_norm', type=float, default=5.0, help='--')
     parser.add_argument('--eval_every', type=float, default=500, help='--')
-    parser.add_argument('--acc_bound', type=float, default=0.5, help='--')
+    parser.add_argument('--acc_bound', type=float, default=1, help='--')
 
     # Bus specific
     parser.add_argument('--bus', type=str, default='proov_001', help='Bus to train data on.')
