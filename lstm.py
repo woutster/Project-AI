@@ -45,10 +45,10 @@ def train(args):
     else:
         device = torch.device(args.device)
 
-    # TODO: data preproccessing
+    train, test = get_data(args.batch_size)
 
-    X, Y_pos, Y_neg = get_data(f'Data/{args.bus}/{args.bus}_merged_data.csv', args.batch_size)
-
+    X, Y_pos, Y_neg = train[0], train[1], train[2]
+    X_test, Y_test_pos, Y_test_neg = test[0], test[1], test[2]
     input_size = X.shape[2]
 
     # Initialise model
@@ -99,15 +99,41 @@ def train(args):
         # neg_optimizer.step()
 
         if step % args.eval_every == 0:
+            import pdb; pdb.set_trace()
             p_acc = accuracy(p_out, Y_pos[step], args.batch_size, args.acc_bound)
             # n_acc = accuracy(n_out, Y_neg[step], args.batch_size, args.acc_bound)
 
+            val_pos_out = pos_model(X_test)
+            val_p_loss = pos_criterion(val_pos_out.transpose(0, 1), Y_test_pos)
+            val_pos_acc = accuracy(val_pos_out, Y_test_pos, len(val_pos_out), args.acc_bound)
+
+
             print("Training step: ", step)
-            print("Pos loss: ", p_loss.item())
+            print("Training Pos loss: ", p_loss.item())
+            print("Validation Pos loss: ", val_p_loss.item())
             # print("Neg loss: ", n_loss.item())
             print("Pos acc: ", p_acc, "%")
+            print("Pos acc: ", val_pos_acc, "%")
             # print("Neg acc:", n_acc)
             print('')
+
+    print("Done training...\n")
+    x = batch_inputs.view(1, args.batch_size, input_size)
+
+    pos_optimizer.zero_grad()
+    neg_optimizer.zero_grad()
+
+    p_out, (ph, pc) = pos_model(x)
+    # n_out, (nh, nc) = neg_model(x)
+
+    p_test_loss = pos_criterion(p_out.transpose(0, 1), Y_pos[step].view(args.batch_size, 1))
+    p_test_acc = accuracy(p_out, Y_pos[step], args.batch_size, args.acc_bound)
+
+    print("Pos loss:", p_test_loss.item())
+    # print("Neg loss: ", n_loss.item())
+    print("Pos acc:", p_test_acc, "%")
+    # print("Neg acc:", n_acc)
+    print('')
 
 
 def accuracy(predictions, target, batch_size, tolerance):
@@ -124,10 +150,14 @@ def process_data(df):
     return df
 
 
-def get_data(filename, batch_size):
-    df = pd.read_csv(filename, sep=';')
+def get_data(batch_size):
+    df = pd.read_csv(f'Data/proov_001/proov_001_merged_data.csv', sep=';')
+    df2 = pd.read_csv(f'Data/proov_002/proov_002_merged_data.csv', sep=';')
+    df3 = pd.read_csv(f'Data/proov_003/proov_003_merged_data.csv', sep=';')
 
-    # print(df.columns)
+    df = df.append(df2, ignore_index=True)
+
+    # Maybe remove columns
     df['timestamp_in'] = df['Unnamed: 0']
     del df['Unnamed: 0']
 
@@ -137,10 +167,24 @@ def get_data(filename, batch_size):
     df['timestamp_exit'] = pd.to_datetime(df['timestamp_exit'], format='%Y-%m-%d %H:%M:%S')
     df['timestamp_exit'] = df.timestamp_exit.values.astype(np.float64) // 10 ** 9
     df = process_data(df)
-    return make_batches(df, batch_size)
+
+    df3['timestamp_in'] = df3['Unnamed: 0']
+    del df3['Unnamed: 0']
+
+    df3['timestamp_in'] = pd.to_datetime(df3['timestamp_in'], format='%Y-%m-%d %H:%M:%S')
+    df3['timestamp_in'] = df3.timestamp_in.values.astype(np.float64) // 10 ** 9
+
+    df3['timestamp_exit'] = pd.to_datetime(df3['timestamp_exit'], format='%Y-%m-%d %H:%M:%S')
+    df3['timestamp_exit'] = df3.timestamp_exit.values.astype(np.float64) // 10 ** 9
+    df3 = process_data(df3)
+
+    train = make_batches(df, batch_size)
+    test = make_batches(df3, batch_size, batch = False)
+
+    return train, test
 
 
-def make_batches(df, batch_size):
+def make_batches(df, batch_size, batch=True):
     x, ypos, yneg = [], [], []
     x_batch, ypos_batch, yneg_batch = [], [], []
 
@@ -152,17 +196,25 @@ def make_batches(df, batch_size):
 
     iter = 0
     lenin = len(df)
-    for i in range(lenin):
-        if i + batch_size >= lenin:
-            break
-        for j in range(batch_size):
-            x_batch.append(df.iloc[i + j].values)
-            ypos_batch.append(cmf['pos'].iloc[i + j])
-            yneg_batch.append(cmf['neg'].iloc[i + j])
-        x.append(x_batch)
-        ypos.append(ypos_batch)
-        yneg.append(yneg_batch)
-        x_batch, ypos_batch, yneg_batch = [], [], []
+
+    if batch:
+        for i in range(lenin):
+            if i + batch_size >= lenin:
+                break
+            for j in range(batch_size):
+                x_batch.append(df.iloc[i + j].values)
+                ypos_batch.append(cmf['pos'].iloc[i + j])
+                yneg_batch.append(cmf['neg'].iloc[i + j])
+            x.append(x_batch)
+            ypos.append(ypos_batch)
+            yneg.append(yneg_batch)
+            x_batch, ypos_batch, yneg_batch = [], [], []
+    else:
+        x = df.values
+        ypos = cmf['pos'].values
+        yneg = cmf['neg'].values
+        # return torch.from_numpy(x).type(torch.FloatTensor), torch.from_numpy(ypos).type(torch.FloatTensor), torch.from_numpy(yneg).type(
+        #     torch.FloatTensor)
 
     return torch.tensor(x).type(torch.FloatTensor), torch.tensor(ypos).type(torch.FloatTensor), torch.tensor(yneg).type(
         torch.FloatTensor)
@@ -189,7 +241,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--train_steps', type=int, default=int(1e6), help='Number of training steps')
     parser.add_argument('--max_norm', type=float, default=5.0, help='--')
-    parser.add_argument('--eval_every', type=float, default=100, help='--')
+    parser.add_argument('--eval_every', type=float, default=500, help='--')
     parser.add_argument('--acc_bound', type=float, default=0.5, help='--')
 
     # Bus specific
