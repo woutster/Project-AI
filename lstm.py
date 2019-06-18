@@ -238,6 +238,8 @@ def train(args):
 
         x = test_inputs.view(1, test_inputs.shape[0], input_size)
 
+        import pdb; pdb.set_trace()
+
         pos_optimizer.zero_grad()
         neg_optimizer.zero_grad()
 
