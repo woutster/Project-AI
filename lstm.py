@@ -135,11 +135,13 @@ def train(args):
             print("Pos acc: ", p_acc, "%")
             print("Neg acc:", n_acc)
             print('')
-            break
+
+        # if step == 10:
+        #     break
 
     print("Done training...\n")
     x = X_test.view(1, X_test.shape[0], input_size)
-
+    print(pos_outs)
     pos_optimizer.zero_grad()
     neg_optimizer.zero_grad()
 
