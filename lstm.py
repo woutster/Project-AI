@@ -124,7 +124,7 @@ def train(args):
         neg_losses.append(n_loss.item())
         neg_accuracies.append(n_acc)
 
-
+        # print(x[0,:,2:7])
         if step % args.eval_every == 0:
             p_acc = accuracy(p_out, Y_pos[step], args.batch_size, args.acc_bound)
             n_acc = accuracy(n_out, Y_neg[step], args.batch_size, args.acc_bound)
@@ -141,7 +141,7 @@ def train(args):
 
     print("Done training...\n")
     x = X_test.view(1, X_test.shape[0], input_size)
-    print(pos_outs)
+    print(np.array(pos_outs).shape)
     pos_optimizer.zero_grad()
     neg_optimizer.zero_grad()
 
@@ -160,8 +160,9 @@ def train(args):
     print("Neg acc:", n_acc)
     print('')
 
-    plt.plot(pos_targets[0])
-    plt.plot(pos_outs[0])
+    plt.plot(pos_targets)
+    plt.plot(pos_outs)
+    plt.savefig("pos_targets.pdf")
     plt.show()
 
 
