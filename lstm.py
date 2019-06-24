@@ -151,54 +151,76 @@ def accuracy(predictions, target, batch_size, tolerance):
     return ((diff_array <= tolerance).sum()/batch_size) * 100
 
 
-def train(args):
+def train(args, flag):
     # Initialize the device which to run the model on
-    if args.device == 'cuda':
-        if torch.cuda.is_available():
-            device = torch.device(args.device)
+    if flag == 'terminal':
+        if args.device == 'cuda':
+            if torch.cuda.is_available():
+                device = torch.device(args.device)
+            else:
+                device = torch.device('cpu')
         else:
-            device = torch.device('cpu')
-    else:
-        device = torch.device(args.device)
+            device = torch.device(args.device)
+
+        batch_size = args.batch_size
+        lstm_num_hidden = args.lstm_num_hidden
+        lstm_num_layers = args.lstm_num_layers
+        dropout_keep_prob = args.dropout_keep_prob
+        learning_rate = args.learning_rate
+        train_steps = args.train_steps
+        acc_bound = args.acc_bound
+        eval_every = args.eval_every
+
+    elif flag == 'tuning':
+        device = args[0]
+        batch_size = args[1]
+        lstm_num_hidden = args[2]
+        lstm_num_layers = args[3]
+        dropout_keep_prob = args[4]
+        learning_rate = args[5]
+        train_steps = args[6]
+        acc_bound = args[7]
+        eval_every = args[8]
+
 
     # Load data
     train_bus_data = BusDataset('proov_00*', train=True)
-    train_data_loader = DataLoader(train_bus_data, batch_size=args.batch_size)
+    train_data_loader = DataLoader(train_bus_data, batch_size=batch_size)
     test_bus_data = BusDataset('proov_00*', train=False)
     test_data_loader = DataLoader(test_bus_data, batch_size=len(test_bus_data))
 
     input_size = train_bus_data.input_size
 
     # Initialise models
-    pos_model = LSTM(batch_size=args.batch_size,
+    pos_model = LSTM(batch_size=batch_size,
                      input_size=input_size,
-                     lstm_num_hidden=args.lstm_num_hidden,
-                     lstm_num_layers=args.lstm_num_layers,
+                     lstm_num_hidden=lstm_num_hidden,
+                     lstm_num_layers=lstm_num_layers,
                      device=device,
                      output_size=1,
-                     dropout=args.dropout_keep_prob
+                     dropout=dropout_keep_prob
                      )
     pos_model.to(device)
 
-    neg_model = LSTM(batch_size=args.batch_size,
+    neg_model = LSTM(batch_size=batch_size,
                      input_size=input_size,
-                     lstm_num_hidden=args.lstm_num_hidden,
-                     lstm_num_layers=args.lstm_num_layers,
+                     lstm_num_hidden=lstm_num_hidden,
+                     lstm_num_layers=lstm_num_layers,
                      device=device,
                      output_size=1,
-                     dropout=args.dropout_keep_prob
+                     dropout=dropout_keep_prob
                      )
     neg_model.to(device)
 
     # Set up the loss and optimizer
     pos_criterion = torch.nn.MSELoss().to(device)
-    pos_optimizer = torch.optim.SGD(pos_model.parameters(), lr=args.learning_rate)
+    pos_optimizer = torch.optim.SGD(pos_model.parameters(), lr=learning_rate)
 
     neg_criterion = torch.nn.MSELoss().to(device)
-    neg_optimizer = torch.optim.SGD(neg_model.parameters(), lr=args.learning_rate)
+    neg_optimizer = torch.optim.SGD(neg_model.parameters(), lr=learning_rate)
 
     # Iterate over data
-    for epoch in range(0, args.train_steps):
+    for epoch in range(0, train_steps):
         # Plotting prep
         all_pos_targets = []
         all_pos_outs = []
@@ -212,10 +234,10 @@ def train(args):
         for step, (batch_inputs, pos_targets, neg_targets) in enumerate(train_data_loader):
 
             # print(batch_inputs.shape)
-            if batch_inputs.shape[0] != args.batch_size:
+            if batch_inputs.shape[0] != batch_size:
                 continue
 
-            x = batch_inputs.view(1, args.batch_size, input_size)
+            x = batch_inputs.view(1, batch_size, input_size)
 
             pos_optimizer.zero_grad()
             neg_optimizer.zero_grad()
@@ -223,31 +245,31 @@ def train(args):
             p_out, _ = pos_model(x)
             n_out, _ = neg_model(x)
 
-            p_loss = pos_criterion(p_out.transpose(0, 1), pos_targets.view(args.batch_size, 1))
+            p_loss = pos_criterion(p_out.transpose(0, 1), pos_targets.view(batch_size, 1))
             p_loss.backward()
             pos_optimizer.step()
 
             # import pdb; pdb.set_trace()
-            n_loss = neg_criterion(n_out.transpose(0, 1), neg_targets.view(args.batch_size, 1))
+            n_loss = neg_criterion(n_out.transpose(0, 1), neg_targets.view(batch_size, 1))
             n_loss.backward()
             neg_optimizer.step()
 
-            p_acc = accuracy(p_out, pos_targets, args.batch_size, args.acc_bound)
-            n_acc = accuracy(n_out, neg_targets, args.batch_size, args.acc_bound)
+            p_acc = accuracy(p_out, pos_targets, batch_size, acc_bound)
+            n_acc = accuracy(n_out, neg_targets, batch_size, acc_bound)
 
             # Plotting statistics
             all_pos_targets.extend(pos_targets.tolist())
-            all_pos_outs.extend(p_out.view(args.batch_size).tolist())
+            all_pos_outs.extend(p_out.view(batch_size).tolist())
             all_pos_losses.append(p_loss.item())
             all_pos_accuracies.append(p_acc)
             all_neg_targets.extend(neg_targets.tolist())
-            all_neg_outs.extend(n_out.view(args.batch_size).tolist())
+            all_neg_outs.extend(n_out.view(batch_size).tolist())
             all_neg_losses.append(n_loss.item())
             all_neg_accuracies.append(n_acc)
 
-            if step % args.eval_every == 0:
-                p_acc = accuracy(p_out, pos_targets, args.batch_size, args.acc_bound)
-                n_acc = accuracy(n_out, neg_targets, args.batch_size, args.acc_bound)
+            if step % eval_every == 0:
+                p_acc = accuracy(p_out, pos_targets, batch_size, acc_bound)
+                n_acc = accuracy(n_out, neg_targets, batch_size, acc_bound)
 
                 print("Training step: ", step)
                 print("Pos loss: ", p_loss.item())
@@ -280,21 +302,65 @@ def train(args):
     neg_pred_test_torch = torch.from_numpy(np.array(neg_pred_test))
 
     p_test_loss = pos_criterion(pos_pred_test_torch.transpose(0, 1), pos_targets.view(pos_targets.shape[0], 1))
-    p_test_acc = accuracy(pos_pred_test_torch.transpose(0, 1), pos_targets, len(pos_pred_test), args.acc_bound)
+    p_test_acc = accuracy(pos_pred_test_torch.transpose(0, 1), pos_targets, len(pos_pred_test), acc_bound)
     n_test_loss = pos_criterion(neg_pred_test_torch.transpose(0, 1), neg_targets.view(neg_targets.shape[0], 1))
-    n_test_acc = accuracy(neg_pred_test_torch.transpose(0, 1), neg_targets, len(neg_pred_test), args.acc_bound)
+    n_test_acc = accuracy(neg_pred_test_torch.transpose(0, 1), neg_targets, len(neg_pred_test), acc_bound)
 
     print("Pos loss:", p_test_loss.item())
     print("Neg loss: ", n_test_loss.item())
     print("Pos acc:", p_test_acc, "%")
     print("Neg acc:", n_test_acc, "%")
     print('')
-    make_plots((all_pos_targets, all_pos_outs), (all_pos_losses, all_pos_accuracies), (all_neg_targets, all_neg_outs), (all_neg_losses, all_neg_accuracies), (pos_pred_test, pos_targets), (neg_pred_test, neg_targets))
+    if flag == 'terminal':
+        make_plots((all_pos_targets, all_pos_outs), (all_pos_losses, all_pos_accuracies), (all_neg_targets, all_neg_outs), (all_neg_losses, all_neg_accuracies), (pos_pred_test, pos_targets), (neg_pred_test, neg_targets))
+    elif flag == 'tuning':
+        return p_test_acc, n_test_acc
+
+
+def tune_hyperparameters(flag):
+
+    batch_size_loop = [16, 32, 64]
+    lstm_num_hidden_loop = [1, 16, 64, 128]
+    lstm_num_layers_loop = [1, 2, 4, 8, 16]
+    # dropout_keep_prob_loop = [0, 0.25, 0.5]
+    learning_rate_loop = [1e-1, 1e-2, 1e-3, 1e-4]
+
+    device = 'cpu'
+    train_steps = int(1)
+    eval_every = 200
+    acc_bound = 0.5
+    dropout_keep_prob = 0
+
+    acc = []
+
+    steps = len(batch_size_loop) * len(lstm_num_hidden_loop) * len(lstm_num_layers_loop) * len(learning_rate_loop)
+    counter = 0
+
+    for batch_size in batch_size_loop:
+        for lstm_num_hidden in lstm_num_hidden_loop:
+            for lstm_num_layers in lstm_num_layers_loop:
+                # for dropout_keep_prob in dropout_keep_prob_loop:
+                for learning_rate in learning_rate_loop:
+                    counter += 1
+                    print('Training model', counter, '/', steps, 'with:')
+                    print('- batch size: ', batch_size)
+                    print('- lstm_num_hidden: ', lstm_num_hidden)
+                    print('- lstm_num_layers: ', lstm_num_layers)
+                    # print('- dropout_keep_prob: ', dropout_keep_prob)
+                    print('- learning rate: ', learning_rate)
+                    print('-------------')
+                    print('')
+                    p_acc, n_acc = train([device, batch_size, lstm_num_hidden, lstm_num_layers, dropout_keep_prob, learning_rate, train_steps, acc_bound, eval_every], flag)
+                    acc.append([p_acc, n_acc, p_acc + n_acc])
+
+    import pdb; pdb.set_trace()
 
 
 if __name__ == "__main__":
     # Parse training configuration
     parser = argparse.ArgumentParser()
+
+    parser.add_argument('--run_type', type=str, default='terminal', help='Tune the parameters or set your own')
 
     # Model params
     parser.add_argument('--lstm_num_hidden', type=int, default=1, help='Number of hidden units in the LSTM')
@@ -320,4 +386,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Train the model
-    train(args)
+    if args.run_type == 'terminal':
+        train(args, flag='terminal')
+    elif args.run_type == 'tuning':
+        print('Tuning the parameters')
+        tune_hyperparameters(args.run_type)
