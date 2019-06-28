@@ -218,6 +218,7 @@ def pd_to_csv(filename, geo, weather, one_hot_days):
                                 'visibility': vis
                             })
 
+
 def holidays(geo):
     """ Retrieves holiday dates from 2017 and 2018. """
 

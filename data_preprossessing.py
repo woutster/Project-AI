@@ -70,19 +70,6 @@ def weather_csv_to_pd(filename):
     return df
 
 
-def match_weather_with_geo(geo, weather):
-    # This is not working at all. :(
-    df = pd.merge(geo, weather, left_on='date', right_on='date')
-    # df = df.drop_duplicates(subset='in_time', keep='first')
-    del df['in']
-    del df['out']
-    print(df.columns)
-    geo['temp'] = 0
-
-    # print('doing stuff...')
-    # print(geo['temp'])
-
-
 def pd_to_csv(filename, geo, weather, one_hot_days):
 
     # Sort weather df.

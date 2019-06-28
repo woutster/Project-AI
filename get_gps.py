@@ -43,19 +43,21 @@ def get_files(geo_fence, file_flag, type_flag):
         if exists:
             filename = file.split('/')[-1]
 
+            # Filter unnecessary files
             if filename in files_to_consider:
-
-                # import pdb; pdb.set_trace()
 
                 print('Parsing file \'', filename, '\'', files_iterated, '/', file_size)
                 total_files.append(filename)
                 try:
+                    # If the file is of all the gps coordinates
+                    # Take the coordinates and put them in a dataframe
                     if file_flag == 'gps_filter':
                         df = pd.read_csv(file + '/gps_filter.csv')
                         df[['lat', 'lon']] = df['gps_filter'].str.split('|', expand=True).astype(float)
-                        # import pdb; pdb.set_trace()
                         df['time'] = pd.to_datetime(df['time'], unit='s')
                         df.drop('gps_filter', axis=1, inplace=True)
+                    # If the file is of the locations (sparser gps data)
+                    # Read it into a dataframe
                     elif file_flag == 'locations':
                         df = pd.read_csv(file + '/locations.csv', usecols=['lat', 'lon'])
 
@@ -65,12 +67,14 @@ def get_files(geo_fence, file_flag, type_flag):
                     continue
 
                 no_coordinates += df.shape[0]
+                # Just check which buses drive to the geofence
                 if type_flag == 'check_files':
                     avg_lat, avg_lon = df.mean()
                     mean_coordinates.append([filename, (avg_lat, avg_lon)])
                     if geo_fence.check_point((avg_lat, avg_lon)):
                         correct_list.append(file)
 
+                # Get all the points of the buses that drive trough the geofence
                 elif type_flag == 'get_points':
 
                     pass_counter = 0
@@ -91,8 +95,6 @@ def get_files(geo_fence, file_flag, type_flag):
                                 pass_trough_bool = False
                                 pass_trough_list.append([pass_trough_time_in, [point, row['time']]])
 
-                    import pdb; pdb.set_trace()
-
                     df_troughput = pd.DataFrame(pass_trough_list)
                     df_troughput.to_csv(filename + '_geoFenced.csv', header=False, index=False)
 
@@ -104,6 +106,7 @@ def get_files(geo_fence, file_flag, type_flag):
 
 
 def plot_map(coordinates, file_flag, points):
+    """Plot a map that shows the coordinates"""
     mapit = folium.Map(location=[52.0, 5.0], zoom_start=6)
     folium.vector_layers.Polygon(points).add_to(mapit)
     for line, coord in coordinates:
