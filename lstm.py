@@ -11,8 +11,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 
-import os
-import sys
 
 class BusDataset(data.Dataset):
 
@@ -24,8 +22,6 @@ class BusDataset(data.Dataset):
         else:
             self.df = pd.read_csv(f'Data/proov_002/proov_002_merged_data.csv', sep=';')
 
-
-        # Maybe remove columns
         self.df['timestamp_in'] = self.df['Unnamed: 0']
         del self.df['Unnamed: 0']
 
@@ -96,6 +92,8 @@ def make_plots(pos_pred, pos_train, neg_pred, neg_train, pos_test, neg_test):
     plt.subplot(2, 2, 1)
     plt.plot(pos_targets, color='r', label='Targets')
     plt.plot(pos_out, color='b', label='Predictions')
+    plt.xlabel('Datapoint from 2017')
+    plt.ylabel('CMF score')
     plt.title("Positive cmf targets vs the predicted positive cmf")
     plt.legend()
 
@@ -103,6 +101,8 @@ def make_plots(pos_pred, pos_train, neg_pred, neg_train, pos_test, neg_test):
     plt.subplot(2, 2, 2)
     plt.plot(pos_loss, color='r', label='Loss')
     plt.plot(pos_acc, color='b', label='Accuracy')
+    plt.xlabel('Iteration number')
+    plt.ylabel('Loss and accuracy (in percentages) score')
     plt.title("Loss and accuracy of the trained positive model")
     plt.legend()
 
@@ -110,6 +110,8 @@ def make_plots(pos_pred, pos_train, neg_pred, neg_train, pos_test, neg_test):
     plt.subplot(2, 2, 3)
     plt.plot(neg_targets, color='r', label='Targets')
     plt.plot(neg_out, color='b', label='Predictions')
+    plt.xlabel('Datapoint from 2017')
+    plt.ylabel('CMF score')
     plt.title("Negative cmf targets vs the predicted negative cmf")
     plt.legend()
 
@@ -117,6 +119,8 @@ def make_plots(pos_pred, pos_train, neg_pred, neg_train, pos_test, neg_test):
     plt.subplot(2, 2, 4)
     plt.plot(neg_loss, color='r', label='Loss')
     plt.plot(neg_acc, color='b', label='Accuracy')
+    plt.xlabel('Iteration number')
+    plt.ylabel('Loss and accuracy (in percentages) score')
     plt.title("Loss and accuracy of the trained negative model")
     plt.legend()
 
@@ -128,7 +132,9 @@ def make_plots(pos_pred, pos_train, neg_pred, neg_train, pos_test, neg_test):
     target_pos = target_pos.numpy()
     plt.plot(target_pos, color='b', label='target')
     plt.plot(pred_pos, color='r', label='prediction')
-    plt.title("Prediction vs target test set")
+    plt.xlabel('Datapoint from 2017')
+    plt.ylabel('CMF score')
+    plt.title("Prediction vs target test set of positive cmf")
     plt.legend()
 
     plt.subplot(2, 1, 2)
@@ -137,7 +143,9 @@ def make_plots(pos_pred, pos_train, neg_pred, neg_train, pos_test, neg_test):
     target_neg = target_neg.numpy()
     plt.plot(target_neg, color='b', label='target')
     plt.plot(pred_neg, color='r', label='prediction')
-    plt.title("Prediction vs target test set")
+    plt.xlabel('Datapoint from 2017')
+    plt.ylabel('CMF score')
+    plt.title("Prediction vs target test set of negative cmf")
     plt.legend()
 
     plt.show()
@@ -149,6 +157,51 @@ def accuracy(predictions, target, batch_size, tolerance):
 
     diff_array = np.abs(prediction - target)
     return ((diff_array <= tolerance).sum()/batch_size) * 100
+
+
+def get_baseline(pos_pred, neg_pred):
+    df = pd.read_csv(f'Data/proov_002/proov_002_merged_data.csv', sep=';')
+
+    df['timestamp_in'] = df['Unnamed: 0']
+    del df['Unnamed: 0']
+
+    df['timestamp_in'] = pd.to_datetime(df['timestamp_in'], format='%Y-%m-%d %H:%M:%S')
+    df['timestamp_exit'] = pd.to_datetime(df['timestamp_exit'], format='%Y-%m-%d %H:%M:%S')
+
+    df.dropna(inplace=True)
+    cmf = pd.DataFrame()
+    cmf['pos'] = df['cmf_pos']
+    cmf['neg'] = df['cmf_neg']
+    cmf['timestamp'] = df['timestamp_in']
+    cmf = cmf.set_index('timestamp')
+    davg = cmf.resample('D').mean().fillna(method='ffill')
+    davg['pos'] = davg['pos'].shift(1)
+    davg['neg'] = davg['neg'].shift(1)
+    davg = davg.fillna(method='bfill')
+
+    cmf.index = cmf.index.normalize()
+
+    total = []
+
+    for index, row in davg.iterrows():
+        if index in cmf.index:
+            daily_values_pos = cmf.get_value(index, 'pos')
+            daily_values_neg = cmf.get_value(index, 'neg')
+            if not hasattr(daily_values_neg, "__iter__"):
+                daily_values_neg = [daily_values_neg]
+                daily_values_pos = [daily_values_pos]
+            for i, _ in enumerate(daily_values_pos):
+                total.append([daily_values_pos[i], daily_values_neg[i], row['pos'], row['neg']])
+        else:
+            continue
+
+    array = np.array(total)
+    diffs_pos = np.abs(array[:, 0] - array[:, 2])
+    diffs_neg = np.abs(array[:, 1] - array[:, 3])
+    len_pos = len(np.where(diffs_pos < 0.5)[0])
+    len_neg = len(np.where(diffs_neg < 0.5)[0])
+
+    return array
 
 
 def train(args, flag):
@@ -182,7 +235,6 @@ def train(args, flag):
         acc_bound = args[7]
         eval_every = args[8]
 
-
     # Load data
     train_bus_data = BusDataset('proov_00*', train=True)
     train_data_loader = DataLoader(train_bus_data, batch_size=batch_size)
@@ -214,10 +266,10 @@ def train(args, flag):
 
     # Set up the loss and optimizer
     pos_criterion = torch.nn.MSELoss().to(device)
-    pos_optimizer = torch.optim.SGD(pos_model.parameters(), lr=learning_rate)
+    pos_optimizer = torch.optim.RMSprop(pos_model.parameters(), lr=learning_rate)
 
     neg_criterion = torch.nn.MSELoss().to(device)
-    neg_optimizer = torch.optim.SGD(neg_model.parameters(), lr=learning_rate)
+    neg_optimizer = torch.optim.RMSprop(neg_model.parameters(), lr=learning_rate)
 
     # Iterate over data
     for epoch in range(0, train_steps):
@@ -311,6 +363,8 @@ def train(args, flag):
     print("Pos acc:", p_test_acc, "%")
     print("Neg acc:", n_test_acc, "%")
     print('')
+
+    get_baseline(np.array(pos_pred_test).ravel(), np.array(neg_pred_test).ravel())
     if flag == 'terminal':
         make_plots((all_pos_targets, all_pos_outs), (all_pos_losses, all_pos_accuracies), (all_neg_targets, all_neg_outs), (all_neg_losses, all_neg_accuracies), (pos_pred_test, pos_targets), (neg_pred_test, neg_targets))
     elif flag == 'tuning':
@@ -318,29 +372,26 @@ def train(args, flag):
 
 
 def tune_hyperparameters(flag):
-
     batch_size_loop = [16, 32, 64]
     lstm_num_hidden_loop = [1, 16, 64, 128]
     lstm_num_layers_loop = [1, 2, 4, 8, 16]
     # dropout_keep_prob_loop = [0, 0.25, 0.5]
     learning_rate_loop = [1e-1, 1e-2, 1e-3, 1e-4]
-
     device = 'cpu'
     train_steps = int(1)
     eval_every = 200
     acc_bound = 0.5
     dropout_keep_prob = 0
-
     acc = []
-
+    acc_dict = {}
     steps = len(batch_size_loop) * len(lstm_num_hidden_loop) * len(lstm_num_layers_loop) * len(learning_rate_loop)
     counter = 0
-
     for batch_size in batch_size_loop:
         for lstm_num_hidden in lstm_num_hidden_loop:
             for lstm_num_layers in lstm_num_layers_loop:
                 # for dropout_keep_prob in dropout_keep_prob_loop:
                 for learning_rate in learning_rate_loop:
+                    acc_dict[counter] = [batch_size, lstm_num_hidden, lstm_num_layers, learning_rate]
                     counter += 1
                     print('Training model', counter, '/', steps, 'with:')
                     print('- batch size: ', batch_size)
@@ -350,10 +401,12 @@ def tune_hyperparameters(flag):
                     print('- learning rate: ', learning_rate)
                     print('-------------')
                     print('')
-                    p_acc, n_acc = train([device, batch_size, lstm_num_hidden, lstm_num_layers, dropout_keep_prob, learning_rate, train_steps, acc_bound, eval_every], flag)
+                    p_acc, n_acc = train(
+                        [device, batch_size, lstm_num_hidden, lstm_num_layers, dropout_keep_prob, learning_rate,
+                         train_steps, acc_bound, eval_every], flag)
                     acc.append([p_acc, n_acc, p_acc + n_acc])
-
-    import pdb; pdb.set_trace()
+    import pdb;
+    pdb.set_trace()
 
 
 if __name__ == "__main__":
@@ -363,12 +416,12 @@ if __name__ == "__main__":
     parser.add_argument('--run_type', type=str, default='terminal', help='Tune the parameters or set your own')
 
     # Model params
-    parser.add_argument('--lstm_num_hidden', type=int, default=1, help='Number of hidden units in the LSTM')
-    parser.add_argument('--lstm_num_layers', type=int, default=1, help='Number of LSTM layers in the model')
+    parser.add_argument('--lstm_num_hidden', type=int, default=64, help='Number of hidden units in the LSTM')
+    parser.add_argument('--lstm_num_layers', type=int, default=8, help='Number of LSTM layers in the model')
 
     # Training params
-    parser.add_argument('--batch_size', type=int, default=64, help='Number of examples to process in a batch')
-    parser.add_argument('--learning_rate', type=float, default=1e-2, help='Learning rate')
+    parser.add_argument('--batch_size', type=int, default=32, help='Number of examples to process in a batch')
+    parser.add_argument('--learning_rate', type=float, default=1e-1, help='Learning rate')
     parser.add_argument('--device', type=str, default='cpu', help='Device to run on')
 
     # It is not necessary to implement the following three params, but it may help training.
