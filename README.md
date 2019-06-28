@@ -8,5 +8,5 @@ This project aimed to predict traffic flow on set pieces of road using a combina
 
 # Running the code
 
-All the code needed to read in the files, create new files (if using new busses), and train the LSTM can be found above. `main.py` will run all necessary scripts. The geofence (found in `get_gps.py` is fixed to Utrecht, but can be changed accordingly. 
+All the code needed to read in the files, create new files (if using new busses), and train the LSTM can be found above. `main.py` will run all necessary scripts. The geofence (found in `get_gps.py`) is fixed to Utrecht, but can be changed accordingly. 
             
