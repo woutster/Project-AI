@@ -23,7 +23,8 @@ pd.options.mode.chained_assignment = None
 
 
 def fix_timesteps(df):
-    print('in fix_timesteps')
+    """ Changes the timestemps from miliseconds to a datetime property."""
+
     orig_len = len(df)
     df['timestamp_entry'] = pd.to_datetime(df['timestamp_entry'],
                                                   format='Timestamp(\'%Y-%m-%d %H:%M:%S.%f\')', errors='coerce')
@@ -40,7 +41,8 @@ def fix_timesteps(df):
 
 
 def preproc_gps_data(df):
-    print('in preproc_gps_data')
+    """ Reformats data so it's easier to work with."""
+
     df[['1_', '2_', '3_']] = df[0].str.split(',', expand=True)
     df[['4_', '5_', '6_']] = df[1].str.split(',', expand=True)
     df['gps_point_entry'] = (df['1_'] + ',' + df['2_']).str.replace(r'^\[', '')
@@ -53,12 +55,21 @@ def preproc_gps_data(df):
 
 
 def calculate_distance(point1, point2):
+    """ Calculates distance from point A to point B. """
     point1 = ast.literal_eval(point1)
     point2 = ast.literal_eval(point2)
     return geopy.distance.vincenty(point1, point2).m
 
 
 def calculate_cmf(speed, distance):
+    """ Calculates the positive and negative constant motion factor.
+    Args:
+        speed: speed of Bus
+        distance: distance a bus has traveled
+    Returns:
+        cmf_pos: positive cmf
+        cmf_neg: negative cmf
+    """
     speed_squared = np.square(speed)
     diff = np.diff(speed_squared)
     cmf_pos = np.sum(np.maximum(diff, 0))/distance
@@ -67,7 +78,8 @@ def calculate_cmf(speed, distance):
 
 
 def add_speeds(df, df_fenced):
-    print('in add_speeds')
+    """ Adds speed data to fenced DataFrame"""
+
     counter = 0
     all_speeds = {}
     # df_fenced = df_fenced[:11]
@@ -83,6 +95,7 @@ def add_speeds(df, df_fenced):
         speeds_in_fence = timestamp_df['speed'].values
 
         len_list = len(speeds_in_fence)
+        # Certain amount of points is needed to calculate cmf, so will be ignored if too little points.
         if len_list >= 5:
             distance = calculate_distance(row['gps_point_entry'], row['gps_point_exit'])
             cmf_pos, cmf_neg = calculate_cmf(speeds_in_fence, distance)
@@ -104,8 +117,8 @@ def add_speeds(df, df_fenced):
     return df_fenced
 
 def csv_to_pd(filename):
-    print('in csv_to_pd')
     """ Read in csv file with geofenced data and return dataframe. """
+
     df = pd.read_csv(filename, names=['in', 'out'])
 
     # Make file pretty
@@ -140,7 +153,6 @@ def csv_to_pd(filename):
 
 
 def weather_csv_to_pd(filename):
-    print('in weather_csv_to_pd')
     """ Read in csv with weather data and return a dataframe. """
 
     df = pd.read_csv(filename, names=['time', 'temp', 'precipitation_intensity', 'wind_speed', 'visibility'])
@@ -151,7 +163,10 @@ def weather_csv_to_pd(filename):
     return df
 
 def pd_to_csv(filename, geo, weather, one_hot_days):
-    print('in pd_to_csv')
+    """Writes the dataframes with geo info, weather data, and one hot days
+    of the week to csv file.
+    """
+
     # Sort weather df.
     weather = weather.sort_values(by='date')
     weather.reset_index()
@@ -204,7 +219,8 @@ def pd_to_csv(filename, geo, weather, one_hot_days):
                             })
 
 def holidays(geo):
-    print('in holidays')
+    """ Retrieves holiday dates from 2017 and 2018. """
+
     base_url = 'https://calendarific.com/api/v2/holidays?'
 
     api_key = '12bc7e5bac025c16e1daf74e12f8811c8460aec5'
@@ -221,6 +237,7 @@ def holidays(geo):
     geo['holiday'] = 0
 
     holidates = []
+    # Reformat string
     for hol in data18['response']['holidays']:
         if int(hol['date']['datetime']['day']) < 10:
             hol['date']['datetime']['day'] = '0' + str(hol['date']['datetime']['day'])
@@ -238,6 +255,7 @@ def holidays(geo):
         date = f"{hol['date']['datetime']['year']}-{hol['date']['datetime']['month']}-{hol['date']['datetime']['day']}"
         holidates.append(date)
 
+    # Create list whether days are holidays
     holiday_boolean_list = []
     for i, g in geo.iterrows():
         if str(g['date']) in holidates:
@@ -245,13 +263,14 @@ def holidays(geo):
         else:
             holiday_boolean_list.append(0)
 
+    # Add holidays to dataframe
     geo['holiday'] = holiday_boolean_list
 
     return geo
 
 
 def merge_data(df_speed, df_combined, idx, file_name):
-    print('in merge_data')
+    """ Merges data from different DataFrames into one DataFrame. """
     df_combined.drop(idx, inplace=True)
 
     df_combined = df_combined.set_index('in_time')
@@ -265,18 +284,26 @@ def merge_data(df_speed, df_combined, idx, file_name):
     return df_merged
 
 def run_process_speed():
+    """ Calls all needed functions for this part of the program. """
     for i in range(1,4):
         bus = 'proov_00' + str(i)
         print(bus)
+
+        # Get geo info + days of week one hot encoded
         geo, one_hot_days = csv_to_pd(f'Data/{bus}/{bus}_geoFenced.csv')
         weather = weather_csv_to_pd(f'Data/{bus}/weather.csv')
 
+        # Add holidays
         geo = holidays(geo)
+
+        # Write to csv
         pd_to_csv(f'Data/{bus}/{bus}_combined.csv', geo, weather, one_hot_days)
 
         # file_name = str(i)
         print("Process file proov_00" + file_name + ".")
         # df = pd.read_csv('Data/proov_00' + file_name + '/speed.csv')
+
+        # Read combined file
         df_combined = pd.read_csv(filepath_or_buffer=f'Data/{bus}/{bus}_combined.csv', sep=',',
                                   parse_dates=['in_time', 'out_time'])
         df_fenced, idx = preproc_gps_data(pd.read_csv(f'Data/{bus}/{bus}_geoFenced.csv', header=None))

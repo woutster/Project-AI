@@ -7,6 +7,7 @@ from picket import Fence
 
 
 def get_fence(points):
+    """ Initialises geofence. """
     geoFence = Fence()
     for point in points:
         geoFence.add_point(point)
@@ -14,6 +15,9 @@ def get_fence(points):
 
 
 def get_files(geo_fence, file_flag, type_flag):
+    """ Get necessary files.
+    Please note that directory has to be changed accordingly.
+    """
     files = glob('/data/ai-projects/*')
 
     files_to_consider = ['proov_001', 'proov_002', 'proov_003']
@@ -29,10 +33,12 @@ def get_files(geo_fence, file_flag, type_flag):
 
     geo_fence_list = []
 
+    # Iterate over files
     for file in files:
 
         files_iterated += 1
 
+        # Ensure file exits
         exists = os.path.isfile(file + '/' + file_flag + '.csv')
         if exists:
             filename = file.split('/')[-1]
