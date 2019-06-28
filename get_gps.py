@@ -106,6 +106,18 @@ def plot_map(coordinates, file_flag, points):
     mapit.save('map_' + file_flag + '.html')
 
 
+def run_get_gps():
+    file_flag = 'gps_filter'
+    type_flag = 'get_points'
+    points = [(52.093338, 5.111842),  # Top left
+              (52.093549, 5.116343),  # Top right
+              (52.092675, 5.116692),  # Bottom Left
+              (52.092632, 5.112223)]  # Bottom right
+    fence = get_fence(points)
+    files, coords, no_coordinates = get_files(fence, file_flag, type_flag)
+    # plot_map(coords, file_flag, points)
+
+
 if __name__ == '__main__':
     file_flag = 'gps_filter'
     type_flag = 'get_points'
